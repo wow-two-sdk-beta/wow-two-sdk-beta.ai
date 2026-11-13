@@ -1,0 +1,30 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <IsTestProject>true</IsTestProject>
+  </PropertyGroup>
+
+  <!--
+    Conformance tier — the one IGreetingsBroker suite (GreetingsBrokerConformance, shipped in the Testing package) run
+    against every implementation: the in-process Module over PostgreSQL, the Client against the service host (in
+    process over PostgreSQL, or a running image when CONFORMANCE_BASE_URL is set), and the test kit's fake. The
+    in-process forms need Docker (Testcontainers).
+  -->
+  <ItemGroup>
+    <PackageReference Include="WoW2.Sdk.Beta.Be.Testing.Data" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="xunit.runner.visualstudio" PrivateAssets="all" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\packages\Module\WoW.Two.Sdk.Beta.Be.Ai.Module.csproj" />
+    <ProjectReference Include="..\..\packages\Client\WoW.Two.Sdk.Beta.Be.Ai.Client.csproj" />
+    <ProjectReference Include="..\..\packages\Testing\WoW.Two.Sdk.Beta.Be.Ai.Testing.csproj" />
+    <ProjectReference Include="..\..\service\Ai.Api\Ai.Api.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="Xunit" />
+  </ItemGroup>
+
+</Project>

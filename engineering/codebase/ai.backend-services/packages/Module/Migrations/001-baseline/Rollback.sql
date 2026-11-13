@@ -1,0 +1,1 @@
+-- 001-baseline created nothing, so its rollback changes nothing: an explicit no-op.

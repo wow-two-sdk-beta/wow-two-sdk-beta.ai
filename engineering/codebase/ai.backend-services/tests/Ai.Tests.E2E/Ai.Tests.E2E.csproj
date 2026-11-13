@@ -1,0 +1,29 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <IsTestProject>true</IsTestProject>
+  </PropertyGroup>
+
+  <!--
+    E2E tier — boots the real Ai.Api host in-process (WebApplicationFactory via the SDK WebApiTestHost) against an
+    ephemeral PostgreSQL container (Docker, Testcontainers): the HTTP wire, the hosted pages, /health and the
+    descriptor's dev check. The test host is a local run, so its boot applies the module's set. Also the image's migrate
+    verbs on the Testing.Data verb harness, over the services Program builds. The SDK testing packages bring xunit,
+    AwesomeAssertions, Npgsql and Testcontainers transitively.
+  -->
+  <ItemGroup>
+    <PackageReference Include="WoW2.Sdk.Beta.Be.Testing" />
+    <PackageReference Include="WoW2.Sdk.Beta.Be.Testing.Data" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="xunit.runner.visualstudio" PrivateAssets="all" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\service\Ai.Api\Ai.Api.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="Xunit" />
+  </ItemGroup>
+
+</Project>

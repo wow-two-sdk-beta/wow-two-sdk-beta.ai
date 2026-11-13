@@ -1,0 +1,54 @@
+# Local verification only. Bring up from engineering/deployment/:
+#
+#   docker compose up -d --build     the whole stack; the service answers on http://127.0.0.1:8421
+#   docker compose up -d database    only the database, for an IDE run of Ai.Api (loopback 8422)
+#
+# The image boots as Production, which only verifies the migration levels, so ai-migrate applies the module's set
+# first with the image's own migrate command, as a deploy's migrate step does, and the service waits for it to finish
+# (M47). The credentials are local-only test values; a deployed environment's connection string comes from its
+# Wheelhouse target, which fills it from the target's own database.
+services:
+  database:
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_DB: ai
+      POSTGRES_USER: ai
+      POSTGRES_PASSWORD: ai
+    ports:
+      - "127.0.0.1:8422:5432"
+    volumes:
+      - database:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ai -d ai"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  ai-migrate:
+    image: ai:local
+    build:
+      context: ../codebase
+      dockerfile: ../deployment/Dockerfile
+    init: true
+    command: ["migrate"]
+    environment:
+      DB_CONNECTION: "Host=database;Database=ai;Username=ai;Password=ai"
+    depends_on:
+      database:
+        condition: service_healthy
+
+  ai:
+    image: ai:local
+    init: true
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8421:8080"
+    environment:
+      DB_CONNECTION: "Host=database;Database=ai;Username=ai;Password=ai"
+    depends_on:
+      ai-migrate:
+        condition: service_completed_successfully
+    mem_limit: 256m
+
+volumes:
+  database:

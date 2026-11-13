@@ -1,0 +1,6 @@
+{
+  "$schema": "../../../../conventions/design/identity/product.schema.json",
+  "manifest": 1,
+  "name": "Ai",
+  "description": "Provider routing with fallback, versioned prompts, an inference log with prices, and model evals."
+}

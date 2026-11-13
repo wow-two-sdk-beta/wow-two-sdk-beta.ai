@@ -1,0 +1,18 @@
+<Solution>
+  <Folder Name="/Packages/">
+    <Project Path="packages/Abstractions/WoW.Two.Sdk.Beta.Be.Ai.Abstractions.csproj" />
+    <Project Path="packages/Client/WoW.Two.Sdk.Beta.Be.Ai.Client.csproj" />
+    <Project Path="packages/Module/WoW.Two.Sdk.Beta.Be.Ai.Module.csproj" />
+    <Project Path="packages/Testing/WoW.Two.Sdk.Beta.Be.Ai.Testing.csproj" />
+  </Folder>
+  <Folder Name="/Services/">
+    <Project Path="service/Ai.Api/Ai.Api.csproj" />
+  </Folder>
+  <Folder Name="/Tests/">
+    <Project Path="tests/Ai.Tests.Conformance/Ai.Tests.Conformance.csproj" />
+    <Project Path="tests/Ai.Tests.E2E/Ai.Tests.E2E.csproj" />
+    <Project Path="tests/Ai.Tests.Integration/Ai.Tests.Integration.csproj" />
+    <Project Path="tests/Ai.Tests.Migrations/Ai.Tests.Migrations.csproj" />
+    <Project Path="tests/Ai.Tests.Unit/Ai.Tests.Unit.csproj" />
+  </Folder>
+</Solution>

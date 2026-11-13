@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Forms 2 and 3: the greetings contract over the running Ai service's HTTP API. -->
+  <PropertyGroup>
+    <Description>Ai Forms 2 and 3: the greetings contract over the running Ai service's HTTP API.</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <PackageReference Include="WoW2.Sdk.Beta.Be" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Abstractions\WoW.Two.Sdk.Beta.Be.Ai.Abstractions.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Ai.Tests.Unit" />
+  </ItemGroup>
+
+</Project>

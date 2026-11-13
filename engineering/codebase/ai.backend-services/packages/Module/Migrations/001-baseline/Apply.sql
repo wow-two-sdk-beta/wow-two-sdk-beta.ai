@@ -1,0 +1,7 @@
+-- 001-baseline — the module's starting level: no table yet.
+--
+-- The template ships no ai table, so a new domain starts with an empty `{{schema}}` schema (the migrator creates it)
+-- and a history at level 1. The domain's first table arrives as `002-<name>` beside this file, named
+-- `{{schema}}.ai_<table>` (the module's tables carry its prefix, as a Form 1 consumer applies them beside its own);
+-- never edit this file, which every database already recorded. EF maps over the tables these files create and never
+-- generates them.
