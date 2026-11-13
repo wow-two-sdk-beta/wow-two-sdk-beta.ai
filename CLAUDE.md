@@ -19,17 +19,24 @@ engineering/             ← the HOW
 ├── deployment/          ← deploy.yml · Dockerfile · docker-compose.yml · deployment.md
 ├── research/ · scripts/ ← analyses · release helpers publish-packages.yml calls
 └── codebase/            ← THE CODE — only place code lives
-    ├── ai.backend-services/    ← Ai.BackendServices.slnx: packages/{Abstractions,Module,Client,Testing} · service/Ai.Api · tests/Ai.Tests.*
-    └── ai.frontend-services/   ← pnpm workspace: packages/fe-ai (npm: contracts · kit · admin) · apps/web (hosted pages + console)
+    ├── ai.backend-services/    ← Ai.BackendServices.slnx: packages/{Abstractions,Providers,Module,Client,Testing} · service/Ai.Api · tests/Ai.Tests.*
+    └── ai.frontend-services/   ← pnpm workspace: packages/fe-ai (npm: contracts · kit · admin) · apps/web (console)
 ```
 
 ## Rules
 
 - Shape: wow-two-ws/conventions/development/repo/structure/domain-structure.md; repo-specific deltas only in `engineering/development/`.
-- The contract lives in `packages/Abstractions`; Module (Form 1) and Client (Forms 2/3) implement it, and
-  `Ai.Tests.Conformance` runs the one suite (`GreetingsBrokerConformance`, in `packages/Testing`) against both.
+- The contract lives in `packages/Abstractions`; Module (Form 1) implements it over `packages/Providers`, and
+  `Ai.Tests.Conformance` runs `PromptsBrokerConformance` (`packages/Testing`) against it; the Client's HTTP brokers
+  join with the HTTP API.
+- Prompts live in tables only (`ai_prompts`), in `rewrite` or `versioned` mode; never add a prompt file or a prompt
+  constant to code. A product seeds its first prompt through the verbs or `IPromptsBroker`.
+- Eval inputs and model answers stay in databases; a repo records only per-run summaries (accuracy, severe misses, cost
+  per item, latency). Harvested text never enters git.
+- Provider keys live in configuration (`Ai:Providers:{name}:ApiKey`): user-secrets locally, a Wheelhouse secret on a
+  target; never in a file in the tree.
 - A package references only what its layer row allows; the service takes the packages by `ProjectReference` and adds
-  only hosting, the HTTP mirror of the contract and the hosted pages.
+  only hosting, the operator verbs, the system status and the console.
 - Management screens ship in `fe-ai`'s `./admin` export; `apps/web`'s console composes them and builds none itself.
 - Package versions come from tags (`be-v*` NuGet, `fe-v*` npm) in `publish-packages.yml`; never commit a version,
   never create a GitHub Release for a package tag. The image version comes from the version track (`v*`).

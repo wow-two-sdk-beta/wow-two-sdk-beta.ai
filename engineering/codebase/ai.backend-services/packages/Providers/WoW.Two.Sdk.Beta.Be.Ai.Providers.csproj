@@ -1,0 +1,29 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Model providers on the Microsoft.Extensions.AI IChatClient seam: Anthropic (official SDK), any OpenAI-compatible host
+    (OpenAI, Groq, DeepSeek, Ollama's /v1) and Ollama, named by configuration (Ai:Providers:{name}). One attempt per
+    call through IAiModelCaller, with usage, latency and a classified error; the module routes, retries, prices and logs.
+    Stateless: no table, no options beyond the providers' own.
+  -->
+  <PropertyGroup>
+    <Description>Ai providers: named Anthropic, OpenAI-compatible and Ollama chat clients with one-attempt calls that report usage, latency and classified errors.</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="WoW2.Sdk.Beta.Be" />
+    <PackageReference Include="Anthropic" />
+    <PackageReference Include="Microsoft.Extensions.AI.OpenAI" />
+    <PackageReference Include="OpenAI" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Abstractions\WoW.Two.Sdk.Beta.Be.Ai.Abstractions.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Ai.Tests.Unit" />
+    <InternalsVisibleTo Include="Ai.Tests.Providers" />
+  </ItemGroup>
+
+</Project>

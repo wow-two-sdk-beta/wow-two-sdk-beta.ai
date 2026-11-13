@@ -34,6 +34,7 @@ cat > "$consumer/Consumer.csproj" <<XML
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="WoW2.Sdk.Beta.Be.Ai.Module" Version="$version" />
+    <PackageReference Include="WoW2.Sdk.Beta.Be.Ai.Providers" Version="$version" />
     <PackageReference Include="WoW2.Sdk.Beta.Be.Ai.Client" Version="$version" />
     <PackageReference Include="WoW2.Sdk.Beta.Be.Ai.Testing" Version="$version" />
   </ItemGroup>
@@ -44,15 +45,19 @@ cat > "$consumer/Program.cs" <<CS
 using Microsoft.Extensions.DependencyInjection;
 using WoW.Two.Sdk.Beta.Be.Ai.Client;
 using WoW.Two.Sdk.Beta.Be.Ai.Module;
-using WoW.Two.Sdk.Beta.Be.Ai.Testing.Greetings;
+using Microsoft.Extensions.Configuration;
+using WoW.Two.Sdk.Beta.Be.Ai.Providers;
+using WoW.Two.Sdk.Beta.Be.Ai.Testing.Conformance;
+using WoW.Two.Sdk.Beta.Be.Ai.Testing.Providers;
 
 var formOne = new ServiceCollection();
+formOne.AddAiProviders(new ConfigurationBuilder().Build());
 formOne.AddAi().Configure(options => options.ConnectionString = "Host=localhost;Database=ai");
 
 var formThree = new ServiceCollection();
 formThree.AddAiClient(options => options.BaseAddress = new Uri("https://service.example.test/"));
 
-Console.WriteLine(\$"pack smoke: {nameof(GreetingsBrokerConformance)} and both forms resolve from the packed family");
+Console.WriteLine(\$"pack smoke: {nameof(PromptsBrokerConformance)}, {nameof(ScriptedAiModelCaller)} and both forms resolve from the packed family");
 CS
 
 # No HTTP cache: a core version published minutes ago must resolve, not a cached index that predates it.

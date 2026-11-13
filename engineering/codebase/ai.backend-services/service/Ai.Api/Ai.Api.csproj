@@ -1,15 +1,22 @@
 <Project Sdk="Microsoft.NET.Sdk.Web">
 
   <!--
-    The deployable Ai service: hosts the Form 1 module and adds only hosting, the HTTP mirror of the contract and
-    the hosted pages. It takes the domain's own packages by ProjectReference, never by a published version.
+    The deployable Ai service: hosts the Form 1 module with the model providers and adds only hosting, the `ai` operator
+    verbs (the eval bench), the HTTP mirror of the contract and the hosted pages. It takes the domain's own packages by
+    ProjectReference, never by a published version. Provider keys stay out of the repo: user-secrets on the local bench
+    (dotnet user-secrets set "Ai:Providers:anthropic:ApiKey" …), the target's settings when deployed.
   -->
+  <PropertyGroup>
+    <UserSecretsId>wow2-ai-api-7f1c2d4e-5b8a-4c61-9e3f-a0d2b6c1e4f7</UserSecretsId>
+  </PropertyGroup>
+
   <ItemGroup>
     <PackageReference Include="WoW2.Sdk.Beta.Be" />
   </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\..\packages\Module\WoW.Two.Sdk.Beta.Be.Ai.Module.csproj" />
+    <ProjectReference Include="..\..\packages\Providers\WoW.Two.Sdk.Beta.Be.Ai.Providers.csproj" />
   </ItemGroup>
 
   <PropertyGroup>

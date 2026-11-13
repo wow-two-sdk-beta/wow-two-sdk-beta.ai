@@ -31,6 +31,17 @@
     <PackageVersion Include="WoW2.Sdk.Beta.Be.Testing.Data" Version="$(BackendSdkVersion)" />
   </ItemGroup>
 
+  <!--
+    AI providers (packages/Providers). Microsoft.Extensions.AI 10.8.3 and OllamaSharp 5.5.0 arrive with the be sdk;
+    Microsoft.Extensions.AI.OpenAI 10.8.3 pairs with that line and requires OpenAI 2.12.0; Anthropic needs
+    Microsoft.Extensions.AI.Abstractions >= 10.5.1.
+  -->
+  <ItemGroup Label="AI providers">
+    <PackageVersion Include="Anthropic" Version="13.8.0" />
+    <PackageVersion Include="Microsoft.Extensions.AI.OpenAI" Version="10.8.3" />
+    <PackageVersion Include="OpenAI" Version="2.12.0" />
+  </ItemGroup>
+
   <!-- Tests. -->
   <ItemGroup>
     <PackageVersion Include="AwesomeAssertions" Version="9.0.0" />

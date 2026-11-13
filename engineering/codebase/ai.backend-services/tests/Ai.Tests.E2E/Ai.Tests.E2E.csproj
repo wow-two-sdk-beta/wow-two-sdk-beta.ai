@@ -8,8 +8,9 @@
     E2E tier — boots the real Ai.Api host in-process (WebApplicationFactory via the SDK WebApiTestHost) against an
     ephemeral PostgreSQL container (Docker, Testcontainers): the HTTP wire, the hosted pages, /health and the
     descriptor's dev check. The test host is a local run, so its boot applies the module's set. Also the image's migrate
-    verbs on the Testing.Data verb harness, over the services Program builds. The SDK testing packages bring xunit,
-    AwesomeAssertions, Npgsql and Testcontainers transitively.
+    verbs on the Testing.Data verb harness, over the services Program builds, and the `ai` operator verbs (the eval bench)
+    over a migrated database: against an unconfigured provider, and with the test kit's ScriptedAiModelCaller. The SDK
+    testing packages bring xunit, AwesomeAssertions, Npgsql and Testcontainers transitively.
   -->
   <ItemGroup>
     <PackageReference Include="WoW2.Sdk.Beta.Be.Testing" />
@@ -20,6 +21,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\service\Ai.Api\Ai.Api.csproj" />
+    <ProjectReference Include="..\..\packages\Testing\WoW.Two.Sdk.Beta.Be.Ai.Testing.csproj" />
   </ItemGroup>
 
   <ItemGroup>

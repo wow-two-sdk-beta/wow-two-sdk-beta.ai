@@ -1,8 +1,8 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
-  <!-- Forms 2 and 3: the greetings contract over the running Ai service's HTTP API. -->
+  <!-- Forms 2 and 3: the Ai contract over the running Ai service's HTTP API; the brokers land with the service's controllers. -->
   <PropertyGroup>
-    <Description>Ai Forms 2 and 3: the greetings contract over the running Ai service's HTTP API.</Description>
+    <Description>Ai Forms 2 and 3: the client entry point over the running Ai service's HTTP API.</Description>
   </PropertyGroup>
 
   <ItemGroup>

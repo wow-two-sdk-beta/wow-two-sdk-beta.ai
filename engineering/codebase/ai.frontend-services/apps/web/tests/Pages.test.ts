@@ -12,12 +12,9 @@ afterEach(() => {
 });
 
 const status = { data: { service: 'ai', status: 'ok', version: '0.1.4+abc1234' } };
-const greeting = { data: { message: 'Hello, world!', greetedAtUtc: '2026-10-26T00:00:00+00:00' } };
-
-/** Answers the console's two same-origin calls: the service status and the greetings contract. */
-function answer(input: RequestInfo | URL) {
-  const url = new URL(input instanceof Request ? input.url : String(input), 'https://ai.example.test');
-  return Response.json(url.pathname === '/api/system/status' ? status : greeting);
+/** Answers the console's same-origin service status call. */
+function answer() {
+  return Response.json(status);
 }
 
 /** Mounts the app at `path`, routed as in the browser but over memory history. */
@@ -32,32 +29,22 @@ async function renderAt(path: string) {
 }
 
 describe('console route', () => {
-  it('shows the running versions, composes the admin status panel and embeds the greeting widget', async () => {
+  it('shows the running app and API versions', async () => {
     vi.stubGlobal(
       'fetch',
-      vi.fn(async (input: RequestInfo | URL) => answer(input)),
+      vi.fn(async () => answer()),
     );
     const wrapper = await renderAt('/');
 
     expect(wrapper.get('[aria-label="App version"]').text()).toBe('app test');
     expect(wrapper.get('[aria-label="API version"]').text()).toBe('api 0.1.4+abc1234');
-    expect(wrapper.get('[aria-label="Greetings contract status"]').text()).toBe('answering');
-    expect(wrapper.find('input[name="name"]').exists()).toBe(true);
   });
 });
 
-describe('hosted greeting route', () => {
-  it('starts with the forwarded name and links back to the forwarding app', async () => {
-    const wrapper = await renderAt('/greet?name=Ann&return_url=https%3A%2F%2Fapp.test%2Fdone');
+describe('route table', () => {
+  it('has no hosted greeting page', async () => {
+    const router = createWebRouter(RouterHistoryMode.Memory);
 
-    expect((wrapper.get('input[name="name"]').element as HTMLInputElement).value).toBe('Ann');
-    expect(wrapper.get('a').attributes('href')).toBe('https://app.test/done');
-  });
-
-  it('offers no way back when the forwarding app gave no usable return URL', async () => {
-    const wrapper = await renderAt('/greet?return_url=javascript%3Aalert(1)');
-
-    expect(wrapper.find('input[name="name"]').exists()).toBe(true);
-    expect(wrapper.find('a').exists()).toBe(false);
+    expect(router.getRoutes().some((route) => route.path === '/greet')).toBe(false);
   });
 });

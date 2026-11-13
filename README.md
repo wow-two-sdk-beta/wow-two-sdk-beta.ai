@@ -7,10 +7,11 @@ WoW2 AI: routes model calls across providers with fallback, keeps prompts and th
 | Artifact | Registry | Line · tag | Install |
 |---|---|---|---|
 | `WoW2.Sdk.Beta.Be.Ai.Abstractions` — the contract | nuget.org | `10.y.z-beta` · `be-v*` | `dotnet add package WoW2.Sdk.Beta.Be.Ai.Abstractions --prerelease` |
+| `WoW2.Sdk.Beta.Be.Ai.Providers` — named model providers and the one-attempt caller | nuget.org | `10.y.z-beta` · `be-v*` | `dotnet add package WoW2.Sdk.Beta.Be.Ai.Providers --prerelease` |
 | `WoW2.Sdk.Beta.Be.Ai.Module` — Form 1, in process | nuget.org | `10.y.z-beta` · `be-v*` | `dotnet add package WoW2.Sdk.Beta.Be.Ai.Module --prerelease` |
 | `WoW2.Sdk.Beta.Be.Ai.Client` — Forms 2 and 3, over HTTP | nuget.org | `10.y.z-beta` · `be-v*` | `dotnet add package WoW2.Sdk.Beta.Be.Ai.Client --prerelease` |
-| `WoW2.Sdk.Beta.Be.Ai.Testing` — fake and conformance suite | nuget.org | `10.y.z-beta` · `be-v*` | `dotnet add package WoW2.Sdk.Beta.Be.Ai.Testing --prerelease` |
-| `@wow-two-beta/fe-ai` — contract mirror, widget, forward, admin panels | npm | `0.0.z` · `fe-v*` | `pnpm add @wow-two-beta/fe-ai` |
+| `WoW2.Sdk.Beta.Be.Ai.Testing` — scripted model caller and conformance suite | nuget.org | `10.y.z-beta` · `be-v*` | `dotnet add package WoW2.Sdk.Beta.Be.Ai.Testing --prerelease` |
+| `@wow-two-beta/fe-ai` — contract mirror, formatters, eval report view | npm | `0.0.z` · `fe-v*` | `pnpm add @wow-two-beta/fe-ai` |
 | `ai` service image | GHCR | `X.Y.Z` · `v*` | `ghcr.io/wow-two-sdk-beta/wow-two-sdk-beta.ai/ai`, deployed by Wheelhouse |
 
 A product pins the family with one `AiSdkVersion` property beside `BackendSdkVersion`.
@@ -18,10 +19,16 @@ A product pins the family with one `AiSdkVersion` property beside `BackendSdkVer
 ## Forms
 
 ```csharp
-// Form 1 — in process, over the product's own PostgreSQL database; its migrate verbs apply the module's set
+// Form 1 — in process, over the product's own PostgreSQL database; its migrate verbs apply the module's set.
+// Providers come from Ai:Providers:{name} (Kind, BaseUrl, ApiKey, TimeoutSeconds); keys from user-secrets or a target secret.
+services.AddAiProviders(configuration);
 services.AddAi().Configure(options => options.ConnectionString = "...");
 
-// Forms 2 and 3 — over the running Ai service; the product's code does not change
+// Then any product code runs a use case; its prompt lives in the ai_prompts table, its route in ai_use_cases.
+var run = await runner.RunAsync(new AiRunRequest { UseCase = "ocharo-relevance", Variables = variables, Subject = subject });
+// run.Outcome, run.Output (JSON), run.Attempts: model, tokens, cost in micro-USD, latency
+
+// Forms 2 and 3 — over the running Ai service; brokers land with the HTTP API (backlog)
 services.AddAiClient(options => options.BaseAddress = new Uri("https://ai.example.com/"));
 ```
 
@@ -32,7 +39,7 @@ product/                 ← the capability: spec, state, features, flows, brand
 engineering/             ← the how: architecture (contract, package registry), planning, deployment, scripts
 └── codebase/
     ├── ai.backend-services/    ← packages/ (the NuGet family) · service/Ai.Api · tests/
-    └── ai.frontend-services/   ← packages/fe-ai (npm) · apps/web (hosted pages + console)
+    └── ai.frontend-services/   ← packages/fe-ai (npm) · apps/web (console)
 ```
 
 ## Run it (dev)

@@ -1,26 +1,12 @@
 <script setup lang="ts">
-import { Button } from '@wow-two-beta/fe/presentation/actions';
-import { Badge, Card } from '@wow-two-beta/fe/presentation/display';
-import { GreetingsStatusPanel } from '@wow-two-beta/fe-ai/admin';
-import { GreetingWidget, forwardToHostedGreeting } from '@wow-two-beta/fe-ai/kit';
+import { Badge } from '@wow-two-beta/fe/presentation/display';
 import { useSystemStatus } from '../../../application/system/UseSystemStatus';
 
-/**
- * Renders the console: the running versions, the fe-ai package's management screens (`./admin`) and both modes of
- * its kit, consumed through its exports.
- */
+/** Renders the console: the running app and API versions. */
 defineOptions({ name: 'ConsolePage' });
 
 const appVersion = __APP_VERSION__;
 const { status } = useSystemStatus();
-
-function forward() {
-  forwardToHostedGreeting({
-    serviceUrl: window.location.origin,
-    name: 'Ann',
-    returnUrl: window.location.href,
-  });
-}
 </script>
 
 <template>
@@ -34,22 +20,5 @@ function forward() {
         <Badge>api {{ status.version }}</Badge>
       </div>
     </header>
-
-    <section class="mt-8" aria-labelledby="admin-heading">
-      <h2 id="admin-heading" class="mb-3 text-sm font-medium text-muted-foreground">Status</h2>
-      <GreetingsStatusPanel />
-    </section>
-
-    <section class="mt-8" aria-labelledby="embed-heading">
-      <h2 id="embed-heading" class="mb-3 text-sm font-medium text-muted-foreground">Embedded widget</h2>
-      <GreetingWidget />
-    </section>
-
-    <section class="mt-8" aria-labelledby="forward-heading">
-      <Card class="p-6">
-        <h2 id="forward-heading" class="text-sm font-medium text-muted-foreground">Forward to the hosted page</h2>
-        <Button class="mt-3" @click="forward">Open the hosted greeting</Button>
-      </Card>
-    </section>
   </main>
 </template>

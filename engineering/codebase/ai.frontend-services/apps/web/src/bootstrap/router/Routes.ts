@@ -1,23 +1,12 @@
-import { createAppRouter, lazyPage, lazyRoute, RouterHistoryMode, type RouteConfig } from '@wow-two-beta/fe/router';
-import { GreetingRouteConstants } from '@wow-two-beta/fe-ai/contracts';
-import { readHostedGreetingRequest } from '../../application/greetings/ReadHostedGreetingRequest';
+import { createAppRouter, lazyRoute, RouterHistoryMode, type RouteConfig } from '@wow-two-beta/fe/router';
 
-/** Holds the route table: the console at the root, then one route per hosted page a consumer forwards to. */
+/** Holds the route table: the console at the root; a route per hosted page is added here when one exists. */
 export const routes: RouteConfig = [
   {
     path: '/',
     id: 'console',
     handle: { title: 'Console' },
     lazy: lazyRoute(() => import('../../presentation/console/pages/ConsolePage.vue')),
-  },
-  {
-    path: GreetingRouteConstants.hostedPage,
-    id: 'hosted-greeting',
-    handle: { title: 'Greetings' },
-    lazy: lazyPage(
-      () => import('../../presentation/greetings/pages/HostedGreetingPage.vue'),
-      (route) => ({ request: readHostedGreetingRequest(route.query) }),
-    ),
   },
 ];
 

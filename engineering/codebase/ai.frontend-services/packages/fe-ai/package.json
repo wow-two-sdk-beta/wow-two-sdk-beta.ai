@@ -1,7 +1,7 @@
 {
   "name": "@wow-two-beta/fe-ai",
   "version": "0.0.0",
-  "description": "Ai domain UI: the Greetings contract, an embeddable greeting widget, the forward to the hosted page and the console's status panel.",
+  "description": "Ai domain UI: the TypeScript mirror of the AI contract, cost and latency formatters, and a read-only eval report view.",
   "type": "module",
   "license": "MIT",
   "repository": {

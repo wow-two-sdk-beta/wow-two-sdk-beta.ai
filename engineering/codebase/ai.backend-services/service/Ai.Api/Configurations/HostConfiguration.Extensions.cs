@@ -1,16 +1,35 @@
 using WoW.Two.Sdk.Beta.Be.Ai.Module;
+using WoW.Two.Sdk.Beta.Be.Ai.Providers;
 using WoW.Two.Sdk.Beta.Be.Web.Json;
 
 namespace Ai.Api.Configurations;
 
 public static partial class HostConfiguration
 {
-    /// <summary>Hosts the Form 1 module over the service's PostgreSQL database; the module registers its own migration set.</summary>
+    /// <summary>The configuration section the module's runner settings bind from (<see cref="AiModuleOptions"/>).</summary>
+    public const string ModuleSectionName = "Ai:Module";
+
+    /// <summary>Fills the module's settings: the runner's from <see cref="ModuleSectionName"/>, then the connection string.</summary>
+    /// <param name="options">The settings to fill.</param>
+    /// <param name="configuration">The configuration.</param>
+    /// <param name="connectionString">The database's connection string.</param>
+    public static void BindModule(AiModuleOptions options, IConfiguration configuration, string connectionString)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+        ArgumentNullException.ThrowIfNull(configuration);
+        configuration.GetSection(ModuleSectionName).Bind(options);
+        options.ConnectionString = connectionString;
+    }
+
+    /// <summary>Hosts the Form 1 module over the service's PostgreSQL database, with the named model providers
+    /// (<c>Ai:Providers:{name}</c>) it calls; the module registers its own migration set.</summary>
     private static WebApplicationBuilder AddAiModule(this WebApplicationBuilder builder)
     {
+        builder.Services.AddAiProviders(builder.Configuration);
+
         // Resolved on first use, so a test host's configuration overrides still reach the connection string.
         builder.Services.AddAi(AiModuleConstants.ServiceSchemaOwner)
-            .Configure<IConfiguration>((options, configuration) => options.ConnectionString = ResolveConnectionString(configuration));
+            .Configure<IConfiguration>((options, configuration) => BindModule(options, configuration, ResolveConnectionString(configuration)));
         return builder;
     }
 

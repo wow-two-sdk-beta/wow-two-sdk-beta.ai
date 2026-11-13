@@ -1,13 +1,14 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <!--
-    The Ai contract: the Greetings broker, its model, constants and error catalogue. It references the kernel
-    WoW2.Sdk.Beta.Be.Abstractions only (Result, AppError, IEvent) — no core, no framework reference, no third-party
-    package — and holds no options binding, DI registration or I/O.
+    The Ai contract: the runner, the prompt registry (use cases, prompts in rewrite or versioned mode, labels), model
+    prices, the inference log and evals, with their models, constants and error catalogue. It references the kernel
+    WoW2.Sdk.Beta.Be.Abstractions only (Result, AppError) — no core, no framework reference, no third-party package —
+    and holds no options binding, DI registration or I/O.
   -->
   <PropertyGroup>
     <RootNamespace>WoW.Two.Sdk.Beta.Be.Ai</RootNamespace>
-    <Description>Ai contract: the Greetings broker, model, constants and error catalogue every form implements.</Description>
+    <Description>Ai contract: the runner, prompt registry, model prices, inference log and evals every form implements.</Description>
   </PropertyGroup>
 
   <ItemGroup>

@@ -1,1 +1,1 @@
-export { default as GreetingsStatusPanel } from './GreetingsStatusPanel.vue';
+export { default as EvalReportView } from './EvalReportView.vue';

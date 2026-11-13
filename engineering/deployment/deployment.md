@@ -26,9 +26,10 @@ The packages ship separately, from `publish-packages.yml` (`engineering/scripts/
   `3` busy and a last `migrate-result` line. A deploy runs the bare `migrate` (apply, then seed) from the release image
   before the first service restarts, as `deploy.yml`'s `migrate:` item declares (pipelines v0.12.0); a deployed boot
   only verifies the levels and refuses to serve a database behind it. `migrate sets --json` needs no database.
-- Dev check: after a dev rollout, `verify` curls `$VERIFY_SERVICE_AI/health` and `/api/greetings` with
+- Dev check: after a dev rollout, `verify` curls `$VERIFY_SERVICE_AI/health` and `/api/system/status` with
   `Host: localhost`; `HostFilteringTests` replays the descriptor's requests.
-- After each main image publish, `conformance.yml` runs the contract suite against the released image.
+- After each main image publish, `conformance.yml` boots the released image, reads its status and runs `ai usecase list`
+  over the migrated database.
 
 ## Local run
 

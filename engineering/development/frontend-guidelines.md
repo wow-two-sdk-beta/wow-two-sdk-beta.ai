@@ -6,10 +6,10 @@ Defer to `wow-two-ws/conventions/development/frontend/`.
 
 - Frontend root: `engineering/codebase/ai.frontend-services/`; Node `24.11.0` from `.nvmrc`, `pnpm@10.33.2`.
 - `packages/fe-ai` is `@wow-two-beta/fe-ai`, published to npm: `./contracts` (the TypeScript mirror of the be
-  contract), `./kit` (`GreetingWidget`, `createGreetingsClient`, `forwardToHostedGreeting`) and `./admin`
-  (`GreetingsStatusPanel`, the management screens). It peers `@wow-two-beta/fe` at `>=0.0.n <0.1.0`, `n` the pinned
+  contract), `./kit` (`formatMicroUsd`, `formatLatency`) and `./admin`
+  (`EvalReportView`, the management screens). It peers `@wow-two-beta/fe` at `>=0.0.n <0.1.0`, `n` the pinned
   version; `check:package` enforces it and fails when one of the three exports is missing.
-- `apps/web` is `@ai/web`, private: the hosted pages (`/greet`) and the console (`/`). It takes `fe-ai` by
+- `apps/web` is `@ai/web`, private: the console (`/`). It takes `fe-ai` by
   `workspace:*`, through its `exports` only — the way a product would; the package never imports `apps/`.
 - App source uses `bootstrap`, `presentation`, `application`, `domain`, and `integration` layers.
 - Routes live in `src/bootstrap/router/Routes.ts` on the fe sdk router (`createAppRouter`, `lazyPage`); a new hosted

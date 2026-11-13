@@ -1,12 +1,14 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <!--
-    Form 1: the greetings capability in the consumer's process, over the consumer's PostgreSQL database. Ships its schema
+    Form 1: the AI layer in the consumer's process, over the consumer's PostgreSQL database: the runner (route, retries,
+    fallback, schema check, cost), the prompt registry (rewrite or versioned mode, one table), model prices, the inference
+    log and evals. Calls models through the Providers package's IAiModelCaller, which the host registers. Ships its schema
     as the named set `ai` (schema `ai`) of embedded Migrations/NNN-name/{Apply,Rollback}.sql; the host's migrate
     verbs apply it, and a local run's boot.
   -->
   <PropertyGroup>
-    <Description>Ai Form 1: the in-process greetings module over the consumer's PostgreSQL database, with its SQL migration set.</Description>
+    <Description>Ai Form 1: the in-process runner, prompt registry, model prices, inference log and evals over the consumer's PostgreSQL database, with its SQL migration set.</Description>
   </PropertyGroup>
 
   <ItemGroup>
@@ -16,6 +18,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Abstractions\WoW.Two.Sdk.Beta.Be.Ai.Abstractions.csproj" />
+    <ProjectReference Include="..\Providers\WoW.Two.Sdk.Beta.Be.Ai.Providers.csproj" />
   </ItemGroup>
 
   <!-- SQL migrations ship embedded (logical name "Migrations/NNN-name/Apply.sql"), resolved by the SDK migrator. -->

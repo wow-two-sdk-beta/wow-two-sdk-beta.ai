@@ -6,7 +6,9 @@
 
   <!--
     Integration tier — the Form 1 module wired as a consumer wires it (AddAi) over a real PostgreSQL (Docker,
-    Testcontainers) whose schema the module's own set builds, in its own schema. No HTTP.
+    Testcontainers) whose schema the module's own set builds, in its own schema, with the test kit's
+    ScriptedAiModelCaller in place of the providers: the runner, prompts in both modes, the inference log and evals. No
+    HTTP, no network.
   -->
   <ItemGroup>
     <PackageReference Include="WoW2.Sdk.Beta.Be.Testing.Data" />
@@ -19,6 +21,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\packages\Module\WoW.Two.Sdk.Beta.Be.Ai.Module.csproj" />
+    <ProjectReference Include="..\..\packages\Testing\WoW.Two.Sdk.Beta.Be.Ai.Testing.csproj" />
   </ItemGroup>
 
   <ItemGroup>

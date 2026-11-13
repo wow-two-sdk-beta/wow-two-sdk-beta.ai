@@ -37,15 +37,16 @@
 ### `codebase/ai.backend-services/`
 | Project | What it is |
 |---|---|
-| `packages/Abstractions` | the contract: `IGreetingsBroker`, model, constants, error catalogue |
-| `packages/Module` | Form 1: the broker in process, `AddAi()`, the named PostgreSQL set `ai` of embedded SQL migrations |
-| `packages/Client` | Forms 2/3: the broker over the service's HTTP API, `AddAiClient()` |
-| `packages/Testing` | fake broker and the conformance suite |
-| `service/Ai.Api` | the deployable host: the module, the HTTP mirror, the hosted pages |
-| `tests/Ai.Tests.{Unit,Integration,E2E,Conformance,Migrations}` | the test tiers |
+| `packages/Abstractions` | the contract: `IAiRunner`, `IPromptsBroker`, `IModelPricesBroker`, `IInferencesBroker`, `IEvalsBroker`, `IEvalSubjectSource`, models, constants, errors |
+| `packages/Providers` | named model providers (Anthropic, OpenAI-compatible, Ollama) from `Ai:Providers`, `IAiModelCaller`, `IAiChatClients`, `AddAiProviders()` |
+| `packages/Module` | Form 1: the brokers and the runner in process, `AddAi()`, the named PostgreSQL set `ai` of embedded SQL migrations (tables, report view, seeded prices) |
+| `packages/Client` | Forms 2/3: `AddAiClient()`; the HTTP brokers land with the API |
+| `packages/Testing` | `ScriptedAiModelCaller` and `PromptsBrokerConformance` |
+| `service/Ai.Api` | the deployable host: the module, the `ai …` operator verbs (the eval bench), status, the console |
+| `tests/Ai.Tests.{Unit,Providers,Integration,E2E,Conformance,Migrations}` | the test tiers |
 
 ### `codebase/ai.frontend-services/`
 | Project | What it is |
 |---|---|
-| `packages/fe-ai` | `@wow-two-beta/fe-ai`: `./contracts` mirror, `./kit` (`GreetingWidget`, forward to the hosted page), `./admin` (`GreetingsStatusPanel`) |
-| `apps/web` | hosted pages (`/greet`) and the console (`/`, composing `./admin`), served by `Ai.Api` |
+| `packages/fe-ai` | `@wow-two-beta/fe-ai`: `./contracts` mirror, `./kit` (cost and latency formatters), `./admin` (`EvalReportView`) |
+| `apps/web` | the console (`/`, composing `./admin`), served by `Ai.Api` |

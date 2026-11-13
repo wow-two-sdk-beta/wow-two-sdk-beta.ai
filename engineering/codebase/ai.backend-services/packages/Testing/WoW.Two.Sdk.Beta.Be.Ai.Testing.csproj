@@ -1,8 +1,8 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
-  <!-- The Ai test kit: a fake over the contract and the conformance suite every implementation must pass. -->
+  <!-- The Ai test kit: a scripted model caller for the runner and the conformance suites every implementation must pass. -->
   <PropertyGroup>
-    <Description>Ai test kit: a fake greetings broker and the conformance suite every implementation must pass.</Description>
+    <Description>Ai test kit: a scripted model caller and the prompt registry's conformance suite every implementation must pass.</Description>
   </PropertyGroup>
 
   <ItemGroup>
@@ -12,6 +12,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Abstractions\WoW.Two.Sdk.Beta.Be.Ai.Abstractions.csproj" />
+    <ProjectReference Include="..\Providers\WoW.Two.Sdk.Beta.Be.Ai.Providers.csproj" />
   </ItemGroup>
 
 </Project>
