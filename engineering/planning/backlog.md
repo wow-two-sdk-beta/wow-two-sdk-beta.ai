@@ -13,6 +13,18 @@ Shape: wow-two-ws/conventions/planning/version-track/version-track.md
 | HTTP API and Client brokers (Forms 2/3) | planned | — |
 | Console pages: prompts, labels, eval reports | planned | — |
 
+## Specced next
+
+ChatGPT builds these in the pull order of wow-two-ws `system/sessions/events-integration/tasks/tasks.md`; each row's spec is its id in the named file there. Delete a row when it ships, with any older row it covers.
+
+| Item | Type | Notes |
+|---|---|---|
+| A01 Make queued eval runs repeatable | fix | spec in `tasks-platform.md` · owner: ev-ai lane |
+| A02 First eval on `afisha-10` from the bench | product | spec in `tasks-platform.md` · owner: ev-ai lane |
+| A03 First HTTP slice: providers, queue, status, cancel, report | feature | spec in `tasks-platform.md` · owner: ev-ai lane |
+| A04 Publish the AI packages and image | engineering | spec in `tasks-platform.md` · owner: ev-ai lane |
+| A06 Budget caps and the weekly shadow comparison | feature | spec in `tasks-platform.md` · owner: ev-ai lane |
+
 ## Platform
 
 | Item | Type | Notes |
