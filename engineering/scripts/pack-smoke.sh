@@ -57,7 +57,8 @@ formOne.AddAi().Configure(options => options.ConnectionString = "Host=localhost;
 var formThree = new ServiceCollection();
 formThree.AddAiClient(options => options.BaseAddress = new Uri("https://service.example.test/"));
 
-Console.WriteLine(\$"pack smoke: {nameof(PromptsBrokerConformance)}, {nameof(ScriptedAiModelCaller)} and both forms resolve from the packed family");
+Console.WriteLine("pack smoke: {0}, {1} and both forms resolve from the packed family",
+    nameof(PromptsBrokerConformance), nameof(ScriptedAiModelCaller));
 CS
 
 # No HTTP cache: a core version published minutes ago must resolve, not a cached index that predates it.
