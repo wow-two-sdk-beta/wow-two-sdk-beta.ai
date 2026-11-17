@@ -1,6 +1,6 @@
 # wow-two-sdk-beta.ai — Product Context
 
-*Last updated: 2026-11-14*
+*Last updated: 2026-11-17*
 
 > Current state — changes often. Durable definition: `product.md`.
 
@@ -24,6 +24,9 @@ Paused 2026-11-14 at the developer's weekly usage limit; resumes Tuesday 2026-11
 
 ## Decisions
 
+- 2026-11-17 — the AI service deploys after the API credit cycle ends (2026-11-24); until then SCFD runs the layer in process (Form 1) and later switches to the client by configuration; the service is for keys, prompts, evals and budgets in one place, not for compute load (developer: "agreed on after")
+- 2026-11-17 — the cycle's API credit goes to any useful work, about 70% Ocharo and 30% Haven-related SCFD processing, with no spending caps built for it (developer: "it's ok to spend all on anything just smth useful")
+- 2026-11-17 — the work stays in SCFD: OLX and AI classification improve there; Haven is untouched and later consumes SCFD like any product (developer)
 - 2026-11-14 — the deployed services take evals over HTTP: queued runs, a worker, status in a table, sample size per run; the CLI stays for local and ops (developer)
 - 2026-11-13 — one domain repo holds providers and the stateful layer; core keeps only MCP hosting (developer: "yes let's extract it and let's get it working")
 - 2026-11-13 — prompts live in tables only; one table serves both modes, a rewrite keeps the version, a versioned save inserts the next one (developer)
