@@ -75,7 +75,7 @@ public static class AiModuleServiceCollectionExtensions
         services.AddScoped<IInferencesBroker, ModuleInferencesBroker>();
         services.AddScoped<IAiRunner, ModuleAiRunner>();
         services.AddScoped<IEvalsBroker, ModuleEvalsBroker>();
-        services.AddHealthChecks().AddDatabaseReadinessCheck<AiDbContext>();
+        services.AddHealthChecks().AddDatabaseReadinessCheck<AiDbContext>("ai-database");
 
         return services.AddOptions<AiModuleOptions>()
             .Validate(options => !string.IsNullOrWhiteSpace(options.ConnectionString), "AiModuleOptions.ConnectionString must be set.")
