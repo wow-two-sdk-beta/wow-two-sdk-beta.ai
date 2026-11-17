@@ -9,6 +9,11 @@ public sealed record AiRunRequest
     /// <summary>Gets the values for the prompt's <c>{{name}}</c> placeholders.</summary>
     public IReadOnlyDictionary<string, string?> Variables { get; init; } = new Dictionary<string, string?>();
 
+    /// <summary>Gets the images to send with the user message, in order: references the module resolves to bytes. A prompt
+    /// takes the first <see cref="Prompts.PromptParameters.MaxImages"/> of them and ignores the rest; one that takes none
+    /// ignores them all. More than the module's limit is refused before any call.</summary>
+    public IReadOnlyList<AiImageRef> Images { get; init; } = [];
+
     /// <summary>Gets what the call is about, such as <c>harvest:post:{id}@{revision}</c>; recorded on every attempt.</summary>
     public string? Subject { get; init; }
 

@@ -93,7 +93,8 @@ internal sealed class AiModelCaller(IOptions<AiProvidersOptions> options, IAiCha
     /// <summary>Builds the messages and options of one attempt.</summary>
     /// <param name="request">The attempt.</param>
     /// <param name="kind">The provider's kind.</param>
-    /// <param name="messages">The system (when not empty) and user messages.</param>
+    /// <param name="messages">The system (when not empty) and user messages; the user message carries the images, each
+    /// as a <see cref="DataContent"/>, before its text.</param>
     /// <param name="chatOptions">The options: model, output budget, temperature, schema, effort.</param>
     /// <param name="problem">Why the request is invalid, when it is.</param>
     /// <returns>Whether the request is valid.</returns>
@@ -116,7 +117,26 @@ internal sealed class AiModelCaller(IOptions<AiProvidersOptions> options, IAiCha
                 system.WithCacheControl(new CacheControlEphemeral());
             messages.Add(new ChatMessage(ChatRole.System, [system]));
         }
-        messages.Add(new ChatMessage(ChatRole.User, request.User));
+
+        if (request.Images.Count > 0 && !AiProviderKinds.TakesImages(kind))
+        {
+            problem = $"The provider kind '{kind}' takes no images.";
+            return false;
+        }
+
+        // Images go before the text, as Anthropic advises; every kind's client maps a DataContent image to its own block.
+        var user = new List<AIContent>(request.Images.Count + 1);
+        foreach (var image in request.Images)
+        {
+            if (image.Data.IsEmpty || image.MediaType is not { } mediaType || !mediaType.StartsWith("image/", StringComparison.OrdinalIgnoreCase))
+            {
+                problem = $"An image must hold bytes with an image/* media type, not '{image.MediaType ?? "none"}'.";
+                return false;
+            }
+            user.Add(new DataContent(image.Data, mediaType));
+        }
+        user.Add(new TextContent(request.User));
+        messages.Add(new ChatMessage(ChatRole.User, user));
 
         if (!string.IsNullOrWhiteSpace(request.JsonSchema))
         {

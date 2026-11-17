@@ -111,6 +111,7 @@ internal sealed class AiDbContext(DbContextOptions<AiDbContext> options) : AppDb
         item.Property(row => row.SetKey).HasMaxLength(AiConstants.MaxKeyLength);
         item.Property(row => row.Subject).HasMaxLength(AiConstants.MaxSubjectLength);
         item.Property(row => row.Input).HasColumnType("jsonb");
+        item.Property(row => row.Images).HasColumnType("jsonb");
         item.Property(row => row.Expected).HasColumnType("jsonb");
         item.Property(row => row.LabelledBy).HasMaxLength(256);
 

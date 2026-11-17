@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
+using System.Security.Cryptography;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using AwesomeAssertions;
@@ -146,6 +147,33 @@ public sealed class AiApiTests(AiApiFixture fixture)
         seenByAdmin.EnumerateArray().Select(inference => inference.GetProperty("subject").GetString()).Should().BeEquivalentTo("post:a", "post:b");
         (await DataAsync(await admin.GetAsync($"/api/ai/inferences?useCase={useCase}&scope=tenant%3Ab"))).EnumerateArray().Should().ContainSingle();
         (await DataAsync(await tenantB.PostAsJsonAsync("/api/ai/inferences/forget", new { subject = "post:a" }))).GetInt32().Should().Be(0, "b cannot purge a's calls");
+    }
+
+    [Fact]
+    public async Task Run_ShouldSendAPublicImage_FetchedFromItsUri_AndLogItsHash()
+    {
+        using var admin = Client(AiApiFixture.Token(AllScopes));
+        var (useCase, _) = await SetUpAsync(admin, "image", items: 0);
+        await DataAsync(await admin.PostAsJsonAsync($"/api/ai/usecases/{useCase}/prompts",
+            new { systemTemplate = "You read posters.", userTemplate = "Poster: {{title}}", parameters = new { maxOutputTokens = 64, maxImages = 1 } }));
+        var poster = new { uri = "http://localhost" + AiApiFixture.PosterPath };
+
+        var run = await DataAsync(await admin.PostAsJsonAsync("/api/ai/runs", new { useCase, variables = new { title = "Fashion week" }, images = new[] { poster }, fresh = true }));
+
+        var hash = Convert.ToHexStringLower(SHA256.HashData(AiApiFixture.Poster));
+        run.GetProperty("outcome").GetString().Should().Be("succeeded");
+        var attempt = run.GetProperty("attempts")[0];
+        attempt.GetProperty("imageCount").GetInt32().Should().Be(1);
+        attempt.GetProperty("imageHashes").EnumerateArray().Select(image => image.GetString()).Should().Equal(hash);
+        fixture.Caller.Requests.Should().Contain(request => request.User == "Poster: Fashion week" && request.Images.Count == 1
+            && request.Images[0].MediaType == "image/png" && request.Images[0].Data.ToArray().SequenceEqual(AiApiFixture.Poster));
+        var logged = await DataAsync(await admin.GetAsync($"/api/ai/inferences?useCase={useCase}"));
+        logged.EnumerateArray().Should().ContainSingle().Which.GetProperty("imageHashes")[0].GetString().Should().Be(hash);
+
+        using var missing = await admin.PostAsJsonAsync("/api/ai/runs", new { useCase, variables = new { title = "x" }, images = new[] { new { uri = "http://localhost/e2e/none.png" } } });
+        using var tooMany = await admin.PostAsJsonAsync("/api/ai/runs", new { useCase, variables = new { title = "x" }, images = Enumerable.Repeat(poster, 5) });
+        missing.StatusCode.Should().Be(HttpStatusCode.NotFound, await missing.Content.ReadAsStringAsync());
+        tooMany.StatusCode.Should().Be(HttpStatusCode.BadRequest, await tooMany.Content.ReadAsStringAsync());
     }
 
     [Fact]

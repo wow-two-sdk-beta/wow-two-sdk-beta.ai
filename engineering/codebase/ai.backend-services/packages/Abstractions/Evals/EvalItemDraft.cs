@@ -1,3 +1,5 @@
+using WoW.Two.Sdk.Beta.Be.Ai.Runs;
+
 namespace WoW.Two.Sdk.Beta.Be.Ai.Evals;
 
 /// <summary>Represents an item to add: give <see cref="Input"/>, or a <see cref="Subject"/> a registered
@@ -12,6 +14,10 @@ public sealed record EvalItemDraft
 
     /// <summary>Gets the prompt variables; none resolves them from <see cref="Subject"/>.</summary>
     public IReadOnlyDictionary<string, string?>? Input { get; init; }
+
+    /// <summary>Gets the image references, in order; none takes the ones the subject source returns with a resolved input,
+    /// else no images.</summary>
+    public IReadOnlyList<AiImageRef>? Images { get; init; }
 
     /// <summary>Gets the expected answer as a JSON object.</summary>
     public required string Expected { get; init; }

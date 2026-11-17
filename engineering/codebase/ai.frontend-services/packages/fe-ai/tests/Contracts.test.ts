@@ -6,13 +6,18 @@ import {
   evalRunStatuses,
   fillRoute,
   isEnded,
+  type AiImageRef,
   type AiProviderSummary,
+  type AiRunRequest,
   type EvalBatchModel,
+  type EvalItemDraft,
+  type EvalItemModel,
   type EvalMatrixRequest,
   type EvalRunQuery,
   type EvalRunRequest,
   type EvalSetModel,
   type InferenceModel,
+  type PromptParameters,
 } from '../src/contracts';
 
 describe('contract constants', () => {
@@ -96,5 +101,45 @@ describe('wire shapes', () => {
     expect(set.scope).toBe('tenant:a');
     expect(inference.outcome).toBe('failed');
     expect(provider.pricedModels).toContain('claude-haiku-5-5');
+  });
+});
+
+describe('image inputs', () => {
+  it('mirror the image limits', () => {
+    expect(AiConstants.maxImages).toBe(20);
+    expect(AiConstants.maxImageUriLength).toBe(2048);
+    expect(AiConstants.maxImageKeyLength).toBe(256);
+    expect(AiConstants.imageMediaTypes).toEqual(['image/jpeg', 'image/png', 'image/webp', 'image/gif']);
+  });
+
+  it('type a run and an item with image references, never bytes', () => {
+    const poster: AiImageRef = { key: 'fss:42', mediaType: 'image/jpeg' };
+    const run: AiRunRequest = {
+      useCase: 'ocharo-parse',
+      variables: { caption: 'See the poster' },
+      images: [poster, { uri: 'https://cdn.example.test/p.png' }],
+      scope: 'tenant:a',
+    };
+    const draft: EvalItemDraft = { set: 'afisha-10', input: { caption: 'x' }, images: [poster], expected: '{}' };
+    const parameters: PromptParameters = { maxImages: 2 };
+
+    expect(run.images?.map((image) => image.uri ?? image.key)).toEqual(['fss:42', 'https://cdn.example.test/p.png']);
+    expect(draft.images?.[0]?.key).toBe('fss:42');
+    expect(parameters.maxImages).toBe(2);
+  });
+
+  it('read an item and an inference as the API answers them', () => {
+    const item = JSON.parse(`{
+      "id": "i1", "set": "afisha-10", "input": {"caption": "x"}, "expected": "{}", "tags": [],
+      "images": [{"key": "fss:42", "sha256": "${'a'.repeat(64)}"}]
+    }`) as EvalItemModel;
+    const inference = JSON.parse(`{"imageCount": 1, "imageHashes": ["${'b'.repeat(64)}"]}`) as Pick<
+      InferenceModel,
+      'imageCount' | 'imageHashes'
+    >;
+
+    expect(item.images[0]?.key).toBe('fss:42');
+    expect(item.images[0]?.sha256).toHaveLength(64);
+    expect(inference.imageCount).toBe(inference.imageHashes.length);
   });
 });

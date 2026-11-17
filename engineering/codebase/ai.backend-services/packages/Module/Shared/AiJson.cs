@@ -3,6 +3,7 @@ using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using WoW.Two.Sdk.Beta.Be.Ai.Prompts;
+using WoW.Two.Sdk.Beta.Be.Ai.Runs;
 
 namespace WoW.Two.Sdk.Beta.Be.Ai.Module.Shared;
 
@@ -30,6 +31,9 @@ internal static class AiJson
             writer.WriteStartObject();
             if (parameters.Effort is { } effort)
                 writer.WriteString("effort", effort);
+            // Only a prompt that takes images writes the key, so the hash of every text-only prompt stays as it was.
+            if (parameters.MaxImages is { } maxImages and > 0)
+                writer.WriteNumber("maxImages", maxImages);
             if (parameters.MaxOutputTokens is { } maxOutputTokens)
                 writer.WriteNumber("maxOutputTokens", maxOutputTokens);
             if (parameters.Temperature is { } temperature)
@@ -39,6 +43,15 @@ internal static class AiJson
 
         return Encoding.UTF8.GetString(buffer.ToArray());
     }
+
+    /// <summary>Writes image references as stored: a JSON array of objects, camelCase, nulls left out.</summary>
+    /// <param name="images">The references.</param>
+    public static string WriteImages(IReadOnlyList<AiImageRef> images) => JsonSerializer.Serialize(images, Options);
+
+    /// <summary>Reads stored image references; a missing or empty value reads as none.</summary>
+    /// <param name="json">The stored JSON array.</param>
+    public static IReadOnlyList<AiImageRef> ReadImages(string? json) =>
+        string.IsNullOrWhiteSpace(json) ? [] : JsonSerializer.Deserialize<List<AiImageRef>>(json, Options) ?? [];
 
     /// <summary>Writes prompt variables as a JSON object of strings.</summary>
     /// <param name="variables">The variables.</param>

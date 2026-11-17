@@ -3,6 +3,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using Npgsql;
 using WoW.Two.Sdk.Beta.Be.Ai.Evals;
+using WoW.Two.Sdk.Beta.Be.Ai.Module.Images;
 using WoW.Two.Sdk.Beta.Be.Ai.Module.Persistence;
 using WoW.Two.Sdk.Beta.Be.Ai.Module.Prompts;
 using WoW.Two.Sdk.Beta.Be.Ai.Module.Runs;
@@ -22,6 +23,8 @@ namespace WoW.Two.Sdk.Beta.Be.Ai.Module.Evals;
 ///   - a batch pins, when it is queued, the items (in run order, each with its expected answer and input hash) and the
 ///     set's scoring rules; each run pins its cell's prompt row with its text, parameters and the output schema, so a
 ///     queued run repeats exactly whatever a later relabel, rewrite or label move does
+///   - an item's images are references; when a cell's prompt takes images, the batch resolves each item's images once and
+///     pins their hashes, and a run resolves them again and fails, as for a changed input, when one no longer matches
 ///   - a run's items go through the runner one scope each, so items run in parallel up to the run's degree and every
 ///     attempt lands in the inference log with the run's id and its set's data scope
 ///   - a run counts each item done as it finishes and beats while it runs, so its status shows progress, a cancel stops it
@@ -118,8 +121,11 @@ internal sealed class ModuleEvalsBroker(
             return Result<EvalItemModel>.Fail(AiErrors.Invalid($"A subject is at most {AiConstants.MaxSubjectLength} characters."));
         if (AiJson.NormalizeObject(draft.Expected) is not { } expected)
             return Result<EvalItemModel>.Fail(AiErrors.Invalid("The expected answer must be a JSON object."));
+        if (AiImages.Check(draft.Images, options.Value) is { } imageError)
+            return Result<EvalItemModel>.Fail(imageError);
 
         var input = draft.Input;
+        var images = draft.Images;
         if (input is null)
         {
             if (subject is null)
@@ -127,9 +133,14 @@ internal sealed class ModuleEvalsBroker(
 
             var useCase = ((Result<EvalSetEntity>.Success)set).Value.UseCase;
             var source = sources.Where(candidate => subject.StartsWith(candidate.Prefix, StringComparison.Ordinal)).MaxBy(candidate => candidate.Prefix.Length);
-            input = source is null ? null : await source.ResolveAsync(useCase, subject, cancellationToken);
-            if (input is null)
+            var resolved = source is null ? null : await source.ResolveInputAsync(useCase, subject, cancellationToken);
+            if (resolved is null)
                 return Result<EvalItemModel>.Fail(AiErrors.SubjectNotResolved(subject));
+            if (images is null && AiImages.Check(resolved.Images, options.Value) is { } sourceImageError)
+                return Result<EvalItemModel>.Fail(sourceImageError);
+
+            input = resolved.Variables;
+            images ??= resolved.Images;
         }
 
         var row = new EvalItemEntity
@@ -138,6 +149,7 @@ internal sealed class ModuleEvalsBroker(
             SetKey = draft.Set,
             Subject = subject,
             Input = AiJson.WriteVariables(input),
+            Images = AiJson.WriteImages(images ?? []),
             Expected = expected,
             Tags = Clean(draft.Tags),
             LabelledBy = string.IsNullOrWhiteSpace(draft.LabelledBy) ? null : draft.LabelledBy.Trim(),
@@ -370,8 +382,43 @@ internal sealed class ModuleEvalsBroker(
             return Result<BatchPlan>.Fail(AiErrors.Invalid(
                 $"{cells.Count} cell{(cells.Count == 1 ? "" : "s")} × {items.Count} items is {cells.Count * items.Count} item calls, over this module's cap of {cap}; sample fewer items or name fewer models."));
 
-        return Result<BatchPlan>.Ok(new BatchPlan(set, book.UseCase.OutputSchema, cells, items, sample));
+        var pinned = await PinImagesAsync(items, cells.Max(cell => MaxImages(cell.Prompt)), cancellationToken);
+        if (pinned is Result<IReadOnlyDictionary<Guid, string[]>>.Failure { Error: var imageError })
+            return Result<BatchPlan>.Fail(imageError);
+
+        return Result<BatchPlan>.Ok(new BatchPlan(set, book.UseCase.OutputSchema, cells, items, sample,
+            ((Result<IReadOnlyDictionary<Guid, string[]>>.Success)pinned).Value));
     }
+
+    /// <summary>Resolves the images the batch's prompts take, the first <paramref name="maxImages"/> of each item, and
+    /// returns their hashes by item; none is resolved when no prompt takes an image. Items resolve in a scope each, up to
+    /// <see cref="AiModuleOptions.MaxEvalParallelism"/> at once.</summary>
+    private async Task<Result<IReadOnlyDictionary<Guid, string[]>>> PinImagesAsync(IReadOnlyList<EvalItemModel> items, int maxImages, CancellationToken cancellationToken)
+    {
+        var hashes = new System.Collections.Concurrent.ConcurrentDictionary<Guid, string[]>();
+        var withImages = maxImages > 0 ? items.Where(item => item.Images.Count > 0).ToList() : [];
+        AppError? failure = null;
+        var parallel = new ParallelOptions { MaxDegreeOfParallelism = options.Value.MaxEvalParallelism, CancellationToken = cancellationToken };
+        await Parallel.ForEachAsync(withImages, parallel, async (item, token) =>
+        {
+            if (Volatile.Read(ref failure) is not null)
+                return;
+
+            await using var scope = scopes.CreateAsyncScope();
+            var loaded = await scope.ServiceProvider.GetRequiredService<AiImageLoader>().LoadAsync([.. item.Images.Take(maxImages)], token);
+            if (loaded is Result<IReadOnlyList<LoadedImage>>.Success { Value: var images })
+                hashes[item.Id] = [.. images.Select(image => image.Sha256)];
+            else if (loaded is Result<IReadOnlyList<LoadedImage>>.Failure { Error: var error })
+                Interlocked.CompareExchange(ref failure, error with { Message = $"Eval item '{item.Id}': {error.Message}" }, null);
+        });
+
+        return failure is null
+            ? Result<IReadOnlyDictionary<Guid, string[]>>.Ok(hashes)
+            : Result<IReadOnlyDictionary<Guid, string[]>>.Fail(failure);
+    }
+
+    /// <summary>Gets how many images a prompt row takes.</summary>
+    private static int MaxImages(PromptModel prompt) => Math.Max(0, prompt.Parameters.MaxImages ?? 0);
 
     /// <summary>Saves a batch with its pinned items and one run per cell, in matrix order: queued for a worker, or running
     /// for the caller, as <paramref name="status"/> says.</summary>
@@ -395,7 +442,8 @@ internal sealed class ModuleEvalsBroker(
             ItemId = item.Id,
             Position = position,
             Expected = item.Expected,
-            InputHash = InputHash(item.Input),
+            InputHash = InputHash(item.Input, item.Images),
+            ImageHashes = plan.ImageHashes.TryGetValue(item.Id, out var hashes) ? hashes : [],
         }));
 
         var runs = new List<EvalRunEntity>();
@@ -456,6 +504,8 @@ internal sealed class ModuleEvalsBroker(
         var pinned = ((Result<PinnedRun>.Success)loaded).Value;
         var run = pinned.Run;
         var reference = new AiModelRef(run.Provider, run.Model).ToString();
+        var takes = MaxImages(pinned.Prompt.Prompt);
+        var drifted = 0;
         using var stop = new CancellationTokenSource();
         using var beating = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         var heartbeat = BeatAsync(runId, stop, beating.Token);
@@ -469,18 +519,29 @@ internal sealed class ModuleEvalsBroker(
                     return;
 
                 await using var scope = scopes.CreateAsyncScope();
+
+                // The images the prompt takes must still be the ones the batch pinned; one that changed stops the run.
+                var images = await LoadPinnedImagesAsync(scope.ServiceProvider, item, takes, token);
+                if (images is null)
+                {
+                    Interlocked.Increment(ref drifted);
+                    await stop.CancelAsync();
+                    return;
+                }
+
                 var runner = scope.ServiceProvider.GetRequiredService<ModuleAiRunner>();
                 var store = scope.ServiceProvider.GetRequiredService<AiDbContext>();
                 var result = await runner.RunPinnedAsync(new AiRunRequest
                 {
                     UseCase = run.UseCase,
                     Variables = item.Item.Input,
+                    Images = item.Item.Images,
                     Subject = item.Item.Subject,
                     Models = [reference],
                     Fresh = run.Fresh,
                     EvalRunId = runId,
                     Scope = run.Scope,
-                }, pinned.Prompt, token);
+                }, pinned.Prompt, images, token);
                 store.EvalScores.Add(ScoreRow(runId, item.Item.Id, item.Expected, pinned.ScoreFields, pinned.SevereMisses, result));
                 await store.SaveChangesAsync(token);
                 if (await queue.ProgressAsync(runId, token) is not EvalRunStatus.Running)
@@ -493,8 +554,30 @@ internal sealed class ModuleEvalsBroker(
             await heartbeat;
         }
 
-        if (!stop.IsCancellationRequested)
+        if (drifted > 0)
+            await queue.FinishAsync(runId, EvalRunStatus.Failed,
+                $"The images of {drifted} pinned item{(drifted == 1 ? "" : "s")} changed or could not be read since the run was queued, so it would not repeat; queue it again.",
+                CancellationToken.None);
+        else if (!stop.IsCancellationRequested)
             await queue.FinishAsync(runId, EvalRunStatus.Succeeded, error: null, CancellationToken.None);
+    }
+
+    /// <summary>Resolves the first <paramref name="takes"/> images of a pinned item and checks them against the hashes its
+    /// batch pinned.</summary>
+    /// <returns>The images (none when the prompt takes none); null when one changed or could not be read.</returns>
+    private static async Task<IReadOnlyList<LoadedImage>?> LoadPinnedImagesAsync(IServiceProvider services, PinnedItem item, int takes, CancellationToken cancellationToken)
+    {
+        var count = Math.Min(takes, item.Item.Images.Count);
+        if (count == 0)
+            return [];
+        if (item.ImageHashes.Count < count)
+            return null;
+
+        var loaded = await services.GetRequiredService<AiImageLoader>().LoadAsync([.. item.Item.Images.Take(count)], cancellationToken);
+        return loaded is Result<IReadOnlyList<LoadedImage>>.Success { Value: var images }
+            && images.Select(image => image.Sha256).SequenceEqual(item.ImageHashes.Take(count), StringComparer.Ordinal)
+            ? images
+            : null;
     }
 
     /// <summary>Reads what a run pinned: its prompt, its batch's rules, and its items in run order with the expected
@@ -525,10 +608,10 @@ internal sealed class ModuleEvalsBroker(
             }
 
             var item = AiModels.ToModel(row);
-            if (!string.Equals(InputHash(item.Input), pin.InputHash, StringComparison.Ordinal))
+            if (!string.Equals(InputHash(item.Input, item.Images), pin.InputHash, StringComparison.Ordinal))
                 drifted++;
             else
-                items.Add(new PinnedItem(item, AiJson.Compact(pin.Expected)));
+                items.Add(new PinnedItem(item, AiJson.Compact(pin.Expected), pin.ImageHashes));
         }
 
         if (drifted > 0)
@@ -573,9 +656,12 @@ internal sealed class ModuleEvalsBroker(
         }
     }
 
-    /// <summary>Hashes an item's input as a batch pins it: its variables written canonically, keys sorted.</summary>
+    /// <summary>Hashes an item's input as a batch pins it: its variables written canonically, keys sorted, then its image
+    /// references when it has any, so an item with no image hashes as it always did.</summary>
     /// <param name="input">The item's variables.</param>
-    internal static string InputHash(IReadOnlyDictionary<string, string?> input) => AiHashes.Sha256(AiJson.WriteVariables(input));
+    /// <param name="images">The item's image references.</param>
+    internal static string InputHash(IReadOnlyDictionary<string, string?> input, IReadOnlyList<AiImageRef>? images = null) =>
+        AiHashes.Sha256(images is { Count: > 0 } ? $"{AiJson.WriteVariables(input)}\u001f{AiJson.WriteImages(images)}" : AiJson.WriteVariables(input));
 
     private AppError? CheckParallelism(int parallelism)
     {
@@ -601,11 +687,12 @@ internal sealed class ModuleEvalsBroker(
     /// <param name="Cells">One model and resolved prompt row per cell, in matrix order.</param>
     /// <param name="Items">The sampled items, in run order.</param>
     /// <param name="Sample">How they were asked for.</param>
+    /// <param name="ImageHashes">The hashes of the images the batch's prompts take, by item; an item without images is absent.</param>
     private sealed record BatchPlan(EvalSetEntity Set, string? OutputSchema, IReadOnlyList<(AiModelRef Model, PromptModel Prompt)> Cells,
-        IReadOnlyList<EvalItemModel> Items, EvalSampleModel Sample);
+        IReadOnlyList<EvalItemModel> Items, EvalSampleModel Sample, IReadOnlyDictionary<Guid, string[]> ImageHashes);
 
-    /// <summary>Holds a pinned item with the expected answer it was queued with.</summary>
-    private sealed record PinnedItem(EvalItemModel Item, string Expected);
+    /// <summary>Holds a pinned item with the expected answer and the image hashes it was queued with.</summary>
+    private sealed record PinnedItem(EvalItemModel Item, string Expected, IReadOnlyList<string> ImageHashes);
 
     /// <summary>Holds what a run pinned, read back for its execution.</summary>
     private sealed record PinnedRun(EvalRunEntity Run, PinnedPrompt Prompt, IReadOnlyList<PinnedItem> Items, IReadOnlyList<string> ScoreFields,
@@ -708,6 +795,8 @@ internal sealed class ModuleEvalsBroker(
                 return Result<EvalSetModel>.Fail(AiErrors.Invalid($"Eval item '{item.Id}' expects no JSON object."));
             if (item.Subject is { Length: > AiConstants.MaxSubjectLength })
                 return Result<EvalSetModel>.Fail(AiErrors.Invalid($"Eval item '{item.Id}' has a subject over {AiConstants.MaxSubjectLength} characters."));
+            if (AiImages.Check(item.Images, options.Value) is { } imageError)
+                return Result<EvalSetModel>.Fail(AiErrors.Invalid($"Eval item '{item.Id}': {imageError.Message}"));
 
             items.Add(new EvalItemEntity
             {
@@ -715,6 +804,7 @@ internal sealed class ModuleEvalsBroker(
                 SetKey = export.Set.Key,
                 Subject = item.Subject,
                 Input = AiJson.WriteVariables(item.Input ?? new Dictionary<string, string?>()),
+                Images = AiJson.WriteImages(item.Images ?? []),
                 Expected = expected,
                 Tags = Clean(item.Tags ?? []),
                 LabelledBy = item.LabelledBy,

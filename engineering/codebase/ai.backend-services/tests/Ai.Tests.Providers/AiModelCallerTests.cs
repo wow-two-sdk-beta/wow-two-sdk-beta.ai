@@ -45,6 +45,51 @@ public sealed class AiModelCallerTests
     }
 
     [Fact]
+    public async Task CallAsync_ShouldSendTheImagesAsDataContent_BeforeTheUserText()
+    {
+        var client = new FakeChatClient();
+        byte[] png = [0x89, 0x50, 0x4E, 0x47, 1];
+        byte[] jpeg = [0xFF, 0xD8, 0xFF, 2];
+
+        await Callers.Fake(client).CallAsync(Request() with { Images = [new AiImageContent(png, "image/png"), new AiImageContent(jpeg, "image/jpeg")] });
+
+        var user = client.Messages.Single(message => message.Role == ChatRole.User);
+        user.Contents.Select(content => content.GetType().Name).Should().Equal(nameof(DataContent), nameof(DataContent), nameof(TextContent));
+        var images = user.Contents.OfType<DataContent>().ToList();
+        images.Select(image => image.MediaType).Should().Equal("image/png", "image/jpeg");
+        images[0].Data.ToArray().Should().Equal(png);
+        images[1].Data.ToArray().Should().Equal(jpeg);
+        user.Text.Should().Be("Sort: milk");
+    }
+
+    [Theory]
+    [InlineData("image/png", 0)]
+    [InlineData("text/html", 3)]
+    [InlineData(null, 3)]
+    public async Task CallAsync_ShouldFailAsBadRequest_WithoutACall_ForAnImageThatIsNotOne(string? mediaType, int length)
+    {
+        var client = new FakeChatClient();
+
+        var result = await Callers.Fake(client).CallAsync(Request() with { Images = [new AiImageContent(new byte[length], mediaType)] });
+
+        result.ErrorKind.Should().Be(AiErrorKind.BadRequest);
+        result.Error.Should().StartWith("An image must hold bytes with an image/* media type");
+        client.Calls.Should().Be(0);
+    }
+
+    [Fact]
+    public void TryBuild_ShouldRefuseImages_ForAKindThatTakesNone()
+    {
+        var built = WoW.Two.Sdk.Beta.Be.Ai.Providers.Internal.AiModelCaller.TryBuild(Request() with { Images = [new AiImageContent(new byte[] { 1 }, "image/png")] }, "other", out _, out _, out var problem);
+
+        built.Should().BeFalse();
+        problem.Should().Be("The provider kind 'other' takes no images.");
+        AiProviderKinds.TakesImages(AiProviderKinds.Anthropic).Should().BeTrue();
+        AiProviderKinds.TakesImages(AiProviderKinds.OpenAi).Should().BeTrue();
+        AiProviderKinds.TakesImages(AiProviderKinds.Ollama).Should().BeTrue();
+    }
+
+    [Fact]
     public async Task CallAsync_ShouldLeaveOptionalOptionsUnset_AndSkipAnEmptySystemMessage()
     {
         var client = new FakeChatClient();

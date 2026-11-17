@@ -78,6 +78,8 @@ internal sealed class InferenceEntity
     public int Attempt { get; set; }
     public string? Subject { get; set; }
     public string InputHash { get; set; } = string.Empty;
+    public int ImageCount { get; set; }
+    public string[] ImageHashes { get; set; } = [];
     public long InputTokens { get; set; }
     public long OutputTokens { get; set; }
     public long CacheReadTokens { get; set; }
@@ -118,8 +120,8 @@ internal sealed class EvalBatchEntity
     public DateTimeOffset CreatedAt { get; set; }
 }
 
-/// <summary>Maps a row of <c>ai_eval_batch_items</c>: one pinned item of a batch, with the expected answer and input hash
-/// it was queued with.</summary>
+/// <summary>Maps a row of <c>ai_eval_batch_items</c>: one pinned item of a batch, with the expected answer, input hash and
+/// image hashes it was queued with.</summary>
 internal sealed class EvalBatchItemEntity
 {
     public Guid BatchId { get; set; }
@@ -127,6 +129,7 @@ internal sealed class EvalBatchItemEntity
     public int Position { get; set; }
     public string Expected { get; set; } = "{}";
     public string InputHash { get; set; } = string.Empty;
+    public string[] ImageHashes { get; set; } = [];
 }
 
 /// <summary>Maps a row of <c>ai_eval_items</c>; a removed item keeps its row for the runs that scored it.</summary>
@@ -136,6 +139,7 @@ internal sealed class EvalItemEntity
     public string SetKey { get; set; } = string.Empty;
     public string? Subject { get; set; }
     public string Input { get; set; } = "{}";
+    public string Images { get; set; } = "[]";
     public string Expected { get; set; } = "{}";
     public string[] Tags { get; set; } = [];
     public string? LabelledBy { get; set; }

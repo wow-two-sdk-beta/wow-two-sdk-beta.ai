@@ -33,4 +33,16 @@ public static class AiConstants
     /// <summary>The data scope of calls, sets and runs made without one: the single bucket of a single-tenant host. A filter
     /// names it to keep only those rows; a model reads it back as no scope.</summary>
     public const string Unscoped = "";
+
+    /// <summary>The most images a prompt takes, and the highest per-call limit a module may set.</summary>
+    public const int MaxImages = 20;
+
+    /// <summary>The longest image URI.</summary>
+    public const int MaxImageUriLength = 2048;
+
+    /// <summary>The longest image key, such as <c>fss:{id}</c>.</summary>
+    public const int MaxImageKeyLength = 256;
+
+    /// <summary>The image media types every provider takes: JPEG, PNG, WebP and GIF.</summary>
+    public static IReadOnlyList<string> ImageMediaTypes { get; } = ["image/jpeg", "image/png", "image/webp", "image/gif"];
 }

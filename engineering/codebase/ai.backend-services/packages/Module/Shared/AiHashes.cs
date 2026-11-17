@@ -18,15 +18,21 @@ internal static class AiHashes
     public static string Content(string systemTemplate, string userTemplate, PromptParameters parameters) =>
         Sha256(string.Join(Separator, systemTemplate, userTemplate, AiJson.CanonicalParameters(parameters)))[..12];
 
-    /// <summary>Gets an attempt's input hash: the SHA-256 of the rendered messages, the schema, the model and the call
-    /// parameters, lowercase hex.</summary>
+    /// <summary>Gets an attempt's input hash: the SHA-256 of the rendered messages, the schema, the model, the call
+    /// parameters and the SHA-256 of each image sent, lowercase hex. With no image it is the text-only hash it always was,
+    /// so stored answers to text calls still match.</summary>
     /// <param name="system">The rendered system message.</param>
     /// <param name="user">The rendered user message.</param>
     /// <param name="schema">The output schema, when the use case has one.</param>
     /// <param name="model">The model reference, <c>{provider}/{model}</c>.</param>
     /// <param name="parameters">The call parameters in effect.</param>
-    public static string Input(string system, string user, string? schema, string model, PromptParameters parameters) =>
-        Sha256(string.Join(Separator, system, user, schema ?? string.Empty, model, AiJson.CanonicalParameters(parameters)));
+    /// <param name="imageHashes">The SHA-256 of each image the attempt sends, in order; none for a text call.</param>
+    public static string Input(string system, string user, string? schema, string model, PromptParameters parameters,
+        IReadOnlyList<string>? imageHashes = null)
+    {
+        var text = string.Join(Separator, system, user, schema ?? string.Empty, model, AiJson.CanonicalParameters(parameters));
+        return Sha256(imageHashes is { Count: > 0 } ? $"{text}{Separator}images:{string.Join(',', imageHashes)}" : text);
+    }
 
     /// <summary>Gets the SHA-256 of a text's UTF-8 bytes, lowercase hex.</summary>
     /// <param name="text">The text.</param>

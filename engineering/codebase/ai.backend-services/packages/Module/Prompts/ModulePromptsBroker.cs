@@ -253,6 +253,8 @@ internal sealed class ModulePromptsBroker(AiDbContext db, TimeProvider time) : I
             return AiErrors.Invalid("The most output tokens must be 1 or more.");
         if (parameters.Effort is { } effort && !Efforts.Contains(effort, StringComparer.Ordinal))
             return AiErrors.Invalid($"The effort '{effort}' must be one of {string.Join(", ", Efforts)}.");
+        if (parameters.MaxImages is < 0 or > AiConstants.MaxImages)
+            return AiErrors.Invalid($"The most images a prompt takes must be 0 to {AiConstants.MaxImages}.");
 
         return null;
     }

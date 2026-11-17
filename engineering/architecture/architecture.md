@@ -1,15 +1,16 @@
 # wow-two-sdk-beta.ai — Architecture
 
-*Last updated: 2026-11-17*
+*Last updated: 2026-11-18*
 
 One contract, a provider edge, a module that owns the state, an HTTP API any host mounts, a client over it, and one
 service that hosts the module, the API, the worker and the verbs.
 
 ```
 product code ──► Abstractions (IAiRunner, IPromptsBroker, IEvalsBroker, …)
-product composition root ──► AddAiProviders(configuration) + AddAi() [+ AddAiEvalWorker()]   (Form 1)
+product composition root ──► AddAiProviders(configuration) + AddAi() [+ AddAiEvalWorker()] [+ IAiImageResolver]   (Form 1)
                          └─► AddAiClient(…)  — the same brokers over HTTP                    (Forms 2/3)
 Module ──► Providers (IAiModelCaller, IAiProviderCatalog) ──► Anthropic · OpenAI-compatible · Ollama
+Module ──► images: the host's IAiImageResolvers (private keys), else its own http(s) fetch — bytes per call, hashes kept
 Module ──► the consumer's PostgreSQL, schema ai: use cases, prompts, labels, prices, inferences, eval sets, batches,
            runs, scores — each inference, set, batch and run with its data scope
 Hosting ──► AddAiApi() + MapAiApi(): routes under api/ai/ over the registered brokers, ai.* scope policies, IAiScopeAccess
@@ -21,9 +22,13 @@ service/Ai.Api ──► Module + Providers + Hosting: the API with Identity's t
 - Switching a product from Form 1 to the service is a registration swap: `AddAiClient` in place of `AddAi()` and
   `AddAiProviders`; the code that calls the brokers stays. A data scope (`tenant:{id}`) set on calls and sets in process
   keeps the same meaning over HTTP, where the service's `IAiScopeAccess` grants it per caller.
-- Queued evals repeat: a batch pins its sample, expected answers and scoring rules, each run its resolved prompt; the
-  worker (in the service, or any host that adds it) claims with `FOR UPDATE SKIP LOCKED`, beats, stops between items on a
-  cancel, and fails orphans.
+- Queued evals repeat: a batch pins its sample, expected answers and scoring rules (and the hashes of the images its
+  prompts take), each run its resolved prompt; the worker (in the service, or any host that adds it) claims with
+  `FOR UPDATE SKIP LOCKED`, beats, stops between items on a cancel, and fails orphans.
+- Images travel as references (`AiImageRef`: a public URI or a host key) and become bytes only inside a call: the module
+  resolves the ones a prompt takes, checks them against its limits, sends them as `DataContent`, and keeps their SHA-256
+  in the input hash and on `ai_inferences`. A product with private images (SCFD's file storage) registers an
+  `IAiImageResolver`; over HTTP, the service fetches public URIs only.
 
 | Form | Registration | Store owner |
 |---|---|---|
@@ -34,8 +39,8 @@ service/Ai.Api ──► Module + Providers + Hosting: the API with Identity's t
 | Project | Responsibility |
 |---|---|
 | `packages/Abstractions` | the contract: runner, prompts, prices, inferences, evals; models, constants, errors; no DI, options or I/O |
-| `packages/Providers` | named `IChatClient`s for Anthropic, OpenAI-compatible hosts and Ollama from `Ai:Providers:{name}`; `IAiModelCaller`: one attempt with usage, latency and a classified error |
-| `packages/Module` | Form 1: the brokers, the runner (route, retries, fallback, schema check, scoped cache, cost, OpenTelemetry tags), evals with pinned batches, the queue and the opt-in worker, the report view, embedded SQL migrations with the seeded prices |
+| `packages/Providers` | named `IChatClient`s for Anthropic, OpenAI-compatible hosts and Ollama from `Ai:Providers:{name}`; `IAiModelCaller`: one attempt (text and images) with usage, latency and a classified error |
+| `packages/Module` | Form 1: the brokers, the runner (route, retries, fallback, schema check, scoped cache, cost, OpenTelemetry tags), image resolution and limits (`Images/`), evals with pinned batches, the queue and the opt-in worker, the report view, embedded SQL migrations with the seeded prices |
 | `packages/Hosting` | the HTTP API: `AddAiApi` (scope policies, `IAiScopeAccess`), `MapAiApi` (routes under `api/ai/`), report formats, the provider overview |
 | `packages/Client` | Forms 2/3: `AddAiClient` and the five HTTP brokers over one named client |
 | `packages/Testing` | `ScriptedAiModelCaller`, `PromptsBrokerConformance` and `EvalsBrokerConformance` |

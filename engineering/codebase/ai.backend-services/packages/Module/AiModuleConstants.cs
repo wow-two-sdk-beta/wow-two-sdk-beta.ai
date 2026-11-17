@@ -19,4 +19,8 @@ public static class AiModuleConstants
     /// settings. It equals <see cref="MigrationSetName"/>, because the migrator opens and creates a set's database from the
     /// services keyed by its name.</summary>
     public const string ServiceKey = MigrationSetName;
+
+    /// <summary>Holds the name of the HTTP client the module fetches public image URIs with; a host configures it with
+    /// <c>AddHttpClient(ImageHttpClientName)</c> (a proxy, a handler in tests).</summary>
+    public const string ImageHttpClientName = "wow2-ai-images";
 }

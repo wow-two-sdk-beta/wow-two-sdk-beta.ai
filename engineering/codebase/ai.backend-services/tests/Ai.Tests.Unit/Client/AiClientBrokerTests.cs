@@ -74,6 +74,25 @@ public sealed class AiClientBrokerTests
     }
 
     [Fact]
+    public async Task Brokers_ShouldSendImageReferences_NeverBytes()
+    {
+        var bodies = new List<string>();
+        var (provider, _) = Client(request =>
+        {
+            bodies.Add(request.Content!.ReadAsStringAsync().GetAwaiter().GetResult());
+            return new HttpResponseMessage(HttpStatusCode.BadRequest) { Content = new StringContent("""{"title":"stop"}""", Encoding.UTF8, "application/problem+json") };
+        });
+        using var scope = provider;
+        AiImageRef[] images = [new() { Key = "fss:42", MediaType = "image/jpeg" }, new() { Uri = "https://cdn.example.test/p.png" }];
+
+        await provider.GetRequiredService<IAiRunner>().RunAsync(new AiRunRequest { UseCase = "parse", Images = images });
+        await provider.GetRequiredService<IEvalsBroker>().AddItemAsync(new EvalItemDraft { Set = "afisha", Input = new Dictionary<string, string?>(), Images = images, Expected = "{}" });
+
+        bodies.Should().HaveCount(2).And.OnlyContain(body =>
+            body.Contains("""images":[{"key":"fss:42","mediaType":"image/jpeg"},{"uri":"https://cdn.example.test/p.png"}]""", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public async Task Brokers_ShouldAnswerUnavailable_WhenTheServiceIsUnreachable()
     {
         var (provider, _) = Client(_ => throw new HttpRequestException("connection refused"));

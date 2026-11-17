@@ -1,11 +1,14 @@
 export { AiConstants } from './AiConstants';
 export type { AiErrorKind } from './AiErrorKind';
+export type { AiImageRef } from './AiImageRef';
 export type { AiOutcome } from './AiOutcome';
 export type { AiProviderSummary } from './AiProviderSummary';
 export { AiRouteConstants, fillRoute } from './AiRouteConstants';
 export { AiScopeConstants } from './AiScopeConstants';
 export type { AiScope } from './AiScopeConstants';
+export type { AiRunRequest } from './AiRunRequest';
 export type { EvalBatchModel } from './EvalBatchModel';
+export type { EvalItemDraft } from './EvalItemDraft';
 export type { EvalItemModel } from './EvalItemModel';
 export type { EvalItemResult } from './EvalItemResult';
 export type { EvalMatrixRequest } from './EvalMatrixRequest';

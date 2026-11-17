@@ -16,6 +16,10 @@ Form 1 of the Ai capability, in the consumer's process over the consumer's Postg
   (default 2,000) caps models × items per request.
 - Data scopes: `AiRunRequest.Scope` and `EvalSetModel.Scope` (`tenant:{id}`) file calls, sets and runs under a tenant;
   filters take `Scopes`, and a stored answer is reused only within its scope.
+- Images: `AiRunRequest.Images` and eval items carry `AiImageRef`s; a prompt with `PromptParameters.MaxImages` sends the
+  first that many to the model, resolved by the host's `IAiImageResolver`s (private keys) or fetched over `http(s)`,
+  within `MaxImagesPerCall` (4), `MaxImageBytes` (5 MB) and `ImageMediaTypes`. Their SHA-256 joins the input hash and
+  the inference log; a queued batch pins them.
 
 The module owns the schema `ai`: `AddAi()` registers its embedded `Migrations/NNN-name/{Apply,Rollback}.sql` as the
 named set `ai`, with its own history and lock, beside the consumer's own set. The consumer's `migrate` verbs (the be
@@ -30,4 +34,5 @@ dotnet add package WoW2.Sdk.Beta.Be.Ai.Module --prerelease
 services.AddAiProviders(configuration);
 services.AddAi().Configure(options => options.ConnectionString = "Host=…;Database=…");
 services.AddAiEvalWorker();   // optional: runs queued evals in this host
+services.AddScoped<IAiImageResolver, FileStorageImages>();   // optional: images behind the product's own keys
 ```

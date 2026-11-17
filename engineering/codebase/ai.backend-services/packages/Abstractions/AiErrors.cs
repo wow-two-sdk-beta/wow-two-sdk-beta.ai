@@ -54,6 +54,13 @@ public static class AiErrors
     public static AppError EvalSetScopeConflict(string set) =>
         AppErrorFactory.Conflict($"Eval set '{set}' exists in another data scope; a set keeps the scope it was created in.");
 
+    /// <summary>Creates the error for an image no resolver could read: none handles the reference, the image does not
+    /// exist, or the fetch failed.</summary>
+    /// <param name="image">The image reference, its URI or key.</param>
+    /// <param name="reason">Why it could not be read.</param>
+    public static AppError ImageNotResolved(string image, string reason) =>
+        AppErrorFactory.NotFound($"The image '{image}' could not be read: {reason}");
+
     /// <summary>Creates a validation error.</summary>
     /// <param name="message">What is wrong.</param>
     public static AppError Invalid(string message) => AppErrorFactory.Validation(message);

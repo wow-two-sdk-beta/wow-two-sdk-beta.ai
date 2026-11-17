@@ -100,6 +100,78 @@ public sealed class AiProviderWireTests
         result.ErrorKind.Should().Be(AiErrorKind.Network);
     }
 
+    /// <summary>A tiny PNG's first bytes: enough for every SDK to send, never decoded.</summary>
+    private static readonly byte[] Png = [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0, 0, 0, 13];
+
+    private static readonly byte[] Jpeg = [0xFF, 0xD8, 0xFF, 0xE0, 0, 16];
+
+    private static AiCallRequest WithImages(AiCallRequest request) =>
+        request with { Images = [new AiImageContent(Png, "image/png"), new AiImageContent(Jpeg, "image/jpeg")] };
+
+    [Fact]
+    public async Task Anthropic_ShouldSendBase64ImageBlocksBeforeTheText_AndCountImageTokensAsInput()
+    {
+        // Anthropic bills an image's tokens as input tokens, so usage needs no image-specific mapping.
+        var handler = new StubHandler(HttpStatusCode.OK, AnthropicAnswer.Replace("\"input_tokens\":10", "\"input_tokens\":1610", StringComparison.Ordinal));
+
+        var result = await Callers.Wire(handler).CallAsync(WithImages(Request("anthropic", "claude-haiku-5-5")));
+
+        var content = JsonNode.Parse(handler.LastBody!)!["messages"]![0]!["content"]!.AsArray();
+        content.Select(block => block!["type"]!.GetValue<string>()).Should().Equal("image", "image", "text");
+        content[0]!["source"]!["type"]!.GetValue<string>().Should().Be("base64");
+        content[0]!["source"]!["media_type"]!.GetValue<string>().Should().Be("image/png");
+        Convert.FromBase64String(content[0]!["source"]!["data"]!.GetValue<string>()).Should().Equal(Png);
+        content[1]!["source"]!["media_type"]!.GetValue<string>().Should().Be("image/jpeg");
+        Convert.FromBase64String(content[1]!["source"]!["data"]!.GetValue<string>()).Should().Equal(Jpeg);
+        content[2]!["text"]!.GetValue<string>().Should().Be("Sort: milk");
+        result.InputTokens.Should().Be(2110, "input, cache reads and cache writes, image tokens inside the input");
+    }
+
+    [Fact]
+    public async Task OpenAi_ShouldSendDataUrlImageParts_AndCountImageTokensAsPromptTokens()
+    {
+        var handler = new StubHandler(HttpStatusCode.OK, OpenAiAnswer.Replace("\"prompt_tokens\":50", "\"prompt_tokens\":900", StringComparison.Ordinal));
+
+        var result = await Callers.Wire(handler).CallAsync(WithImages(Request("groq", "openai/gpt-oss-20b")));
+
+        var user = JsonNode.Parse(handler.LastBody!)!["messages"]!.AsArray().Single(message => message!["role"]!.GetValue<string>() == "user")!;
+        var parts = user["content"]!.AsArray();
+        parts.Select(part => part!["type"]!.GetValue<string>()).Should().Equal("image_url", "image_url", "text");
+        parts[0]!["image_url"]!["url"]!.GetValue<string>().Should().Be("data:image/png;base64," + Convert.ToBase64String(Png));
+        parts[1]!["image_url"]!["url"]!.GetValue<string>().Should().Be("data:image/jpeg;base64," + Convert.ToBase64String(Jpeg));
+        parts[2]!["text"]!.GetValue<string>().Should().Be("Sort: milk");
+        result.InputTokens.Should().Be(900);
+    }
+
+    [Fact]
+    public async Task Ollama_ShouldSendTheImagesAsBase64OnTheUserMessage()
+    {
+        var handler = new StubHandler(HttpStatusCode.OK, OllamaAnswer.ReplaceLineEndings(" ").Replace("\"prompt_eval_count\":12", "\"prompt_eval_count\":700", StringComparison.Ordinal));
+
+        var result = await Callers.Wire(handler).CallAsync(WithImages(Request("ollama", "llama3.2")));
+
+        var user = JsonNode.Parse(handler.LastBody!)!["messages"]!.AsArray().Single(message => message!["role"]!.GetValue<string>() == "user")!;
+        user["content"]!.GetValue<string>().Should().Be("Sort: milk");
+        user["images"]!.AsArray().Select(image => image!.GetValue<string>()).Should().Equal(Convert.ToBase64String(Png), Convert.ToBase64String(Jpeg));
+        result.InputTokens.Should().Be(700);
+    }
+
+    [Fact]
+    public async Task EveryKind_ShouldSendNoImageBlock_ForATextCall()
+    {
+        var anthropic = new StubHandler(HttpStatusCode.OK, AnthropicAnswer);
+        var openAi = new StubHandler(HttpStatusCode.OK, OpenAiAnswer);
+        var ollama = new StubHandler(HttpStatusCode.OK, OllamaAnswer.ReplaceLineEndings(" "));
+
+        await Callers.Wire(anthropic).CallAsync(Request("anthropic", "claude-haiku-5-5"));
+        await Callers.Wire(openAi).CallAsync(Request("groq", "openai/gpt-oss-20b"));
+        await Callers.Wire(ollama).CallAsync(Request("ollama", "llama3.2"));
+
+        anthropic.LastBody.Should().NotContain("\"image\"");
+        openAi.LastBody.Should().NotContain("image_url");
+        ollama.LastBody.Should().NotContain("\"images\"");
+    }
+
     private const string OpenAiAnswer = """
         {"id":"c1","object":"chat.completion","created":1,"model":"openai/gpt-oss-20b",
          "choices":[{"index":0,"message":{"role":"assistant","content":"{\"label\":\"food\"}"},"finish_reason":"stop"}],

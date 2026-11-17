@@ -6,6 +6,7 @@ using Npgsql;
 using WoW.Two.Sdk.Beta.Be.Ai.Evals;
 using WoW.Two.Sdk.Beta.Be.Ai.Inferences;
 using WoW.Two.Sdk.Beta.Be.Ai.Module.Evals;
+using WoW.Two.Sdk.Beta.Be.Ai.Module.Images;
 using WoW.Two.Sdk.Beta.Be.Ai.Module.Inferences;
 using WoW.Two.Sdk.Beta.Be.Ai.Module.Persistence;
 using WoW.Two.Sdk.Beta.Be.Ai.Module.Prices;
@@ -33,6 +34,9 @@ public static class AiModuleServiceCollectionExtensions
     ///   - it registers no provider: the host composes <c>AddAiProviders(configuration)</c> from the Providers package
     ///     beside it, which supplies the runner's <c>IAiModelCaller</c>
     ///   - a product adds an <see cref="IEvalSubjectSource"/> per subject prefix to let eval items be added from subjects
+    ///   - a product adds an <see cref="IAiImageResolver"/> for images behind its own keys (<c>fss:{id}</c>); public
+    ///     <c>http(s)</c> image URIs need none, the module fetches them on its client
+    ///     <see cref="AiModuleConstants.ImageHttpClientName"/>
     ///   - nothing it registers is unkeyed infrastructure, so it sits beside a host's own database and default set
     ///   - the host's migrate verbs and its boot helper (<c>MigrateBespokeOnStartupAsync</c>, which applies on a local run
     ///     only) reach the set with every other registered set
@@ -73,6 +77,8 @@ public static class AiModuleServiceCollectionExtensions
         services.AddScoped<IPromptsBroker, ModulePromptsBroker>();
         services.AddScoped<IModelPricesBroker, ModuleModelPricesBroker>();
         services.AddScoped<IInferencesBroker, ModuleInferencesBroker>();
+        services.AddHttpClient(AiModuleConstants.ImageHttpClientName, client => client.DefaultRequestHeaders.UserAgent.ParseAdd("wow2-ai-images/1.0"));
+        services.AddScoped<AiImageLoader>();
         services.AddScoped<ModuleAiRunner>();
         services.AddScoped<IAiRunner>(provider => provider.GetRequiredService<ModuleAiRunner>());
         services.AddScoped<ModuleEvalsBroker>();
@@ -88,7 +94,12 @@ public static class AiModuleServiceCollectionExtensions
             .Validate(options => options.DefaultMaxOutputTokens > 0, "AiModuleOptions.DefaultMaxOutputTokens must be 1 or more.")
             .Validate(options => options.MaxEvalParallelism is >= 1 and <= 16, "AiModuleOptions.MaxEvalParallelism must be 1 to 16.")
             .Validate(options => options.EvalHeartbeatInterval > TimeSpan.Zero, "AiModuleOptions.EvalHeartbeatInterval must be positive.")
-            .Validate(options => options.MaxEvalItemCalls is >= 1 and <= 1_000_000, "AiModuleOptions.MaxEvalItemCalls must be 1 to 1,000,000.");
+            .Validate(options => options.MaxEvalItemCalls is >= 1 and <= 1_000_000, "AiModuleOptions.MaxEvalItemCalls must be 1 to 1,000,000.")
+            .Validate(options => options.MaxImagesPerCall is >= 0 and <= AiConstants.MaxImages, $"AiModuleOptions.MaxImagesPerCall must be 0 to {AiConstants.MaxImages}.")
+            .Validate(options => options.MaxImageBytes is >= 1 and <= MaxImageBytesLimit, "AiModuleOptions.MaxImageBytes must be 1 to 20 MB.")
+            .Validate(options => options.ImageMediaTypes is null || options.ImageMediaTypes.All(type => AiConstants.ImageMediaTypes.Contains(type, StringComparer.Ordinal)),
+                $"AiModuleOptions.ImageMediaTypes may name only {string.Join(", ", AiConstants.ImageMediaTypes)}.")
+            .Validate(options => options.ImageFetchTimeout > TimeSpan.Zero, "AiModuleOptions.ImageFetchTimeout must be positive.");
     }
 
     /// <summary>Registers the eval worker: a hosted service that drains the eval queue <see cref="IEvalsBroker.QueueAsync"/>
@@ -113,6 +124,9 @@ public static class AiModuleServiceCollectionExtensions
             .Validate(options => options.OrphanAfter > TimeSpan.Zero, "AiEvalWorkerOptions.OrphanAfter must be positive.")
             .Validate(options => options.MaxConcurrentRuns is >= 1 and <= 16, "AiEvalWorkerOptions.MaxConcurrentRuns must be 1 to 16.");
     }
+
+    /// <summary>The largest image any module takes: 20 MB, OpenAI's per-image ceiling.</summary>
+    private const int MaxImageBytesLimit = 20 * 1024 * 1024;
 
     private static string ConnectionString(IServiceProvider provider) =>
         provider.GetRequiredService<IOptions<AiModuleOptions>>().Value.ConnectionString;

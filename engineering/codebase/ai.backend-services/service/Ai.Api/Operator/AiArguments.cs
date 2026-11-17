@@ -1,4 +1,5 @@
 using System.Globalization;
+using WoW.Two.Sdk.Beta.Be.Ai.Runs;
 
 namespace Ai.Api.Operator;
 
@@ -15,17 +16,17 @@ public sealed record AiArguments(string Command, IReadOnlyDictionary<string, IRe
         ["usecase put"] = new(["key", "mode", "route"], ["schema-file", "description", "keep-outputs"]),
         ["usecase list"] = new([], []),
         ["providers"] = new([], [], Flags: ["live"]),
-        ["prompt save"] = new(["use-case", "system-file", "user-file"], ["model-match", "temperature", "max-tokens", "effort", "note", "by"]),
+        ["prompt save"] = new(["use-case", "system-file", "user-file"], ["model-match", "temperature", "max-tokens", "effort", "max-images", "note", "by"]),
         ["prompt list"] = new(["use-case"], []),
         ["label move"] = new(["use-case", "label", "version"], ["by"]),
         ["price put"] = new(["provider", "model", "input", "output"], ["effective-from", "cache-write", "cache-read", "source"]),
         ["price list"] = new([], []),
-        ["run"] = new(["use-case"], ["var", "var-file", "model", "version", "label", "subject"], Flags: ["fresh"], Repeatable: ["var", "var-file", "model"]),
+        ["run"] = new(["use-case"], ["var", "var-file", "image", "model", "version", "label", "subject"], Flags: ["fresh"], Repeatable: ["var", "var-file", "image", "model"]),
         ["inferences"] = new([], ["use-case", "subject", "run", "limit"]),
         ["totals"] = new(["from", "to"], []),
         ["eval set put"] = new(["key", "use-case"], ["score-fields", "severe", "note"]),
         ["eval sets"] = new([], []),
-        ["eval add"] = new(["set", "expected"], ["subject", "input-file", "tags", "by"]),
+        ["eval add"] = new(["set", "expected"], ["subject", "input-file", "image", "tags", "by"], Repeatable: ["image"]),
         ["eval relabel"] = new(["item", "expected"], ["by"]),
         ["eval remove"] = new(["item"], []),
         ["eval items"] = new(["set"], []),
@@ -121,6 +122,15 @@ public sealed record AiArguments(string Command, IReadOnlyDictionary<string, IRe
     /// <summary>Gets a repeatable option's raw values, unsplit.</summary>
     /// <param name="name">The option, without its dashes.</param>
     public IReadOnlyList<string> All(string name) => Options.TryGetValue(name, out var values) ? values : [];
+
+    /// <summary>Gets a repeatable option's values as image references: an <c>http(s)</c> URI as a URI, anything else (such
+    /// as <c>fss:{id}</c>) as a key the host resolves.</summary>
+    /// <param name="name">The option, without its dashes.</param>
+    public IReadOnlyList<AiImageRef> Images(string name) =>
+        [.. All(name).Select(value => value.Trim()).Select(value =>
+            value.StartsWith("http://", StringComparison.OrdinalIgnoreCase) || value.StartsWith("https://", StringComparison.OrdinalIgnoreCase)
+                ? new AiImageRef { Uri = value }
+                : new AiImageRef { Key = value })];
 
     /// <summary>Gets whether a flag was given.</summary>
     /// <param name="name">The flag, without its dashes.</param>

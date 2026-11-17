@@ -1,6 +1,8 @@
 using System.Security.Claims;
 using System.Text;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -8,6 +10,7 @@ using Microsoft.IdentityModel.JsonWebTokens;
 using Microsoft.IdentityModel.Tokens;
 using Testcontainers.PostgreSql;
 using WoW.Two.Sdk.Beta.Be.Ai.Hosting.Access;
+using WoW.Two.Sdk.Beta.Be.Ai.Module;
 using WoW.Two.Sdk.Beta.Be.Ai.Providers;
 using WoW.Two.Sdk.Beta.Be.Ai.Testing.Providers;
 using WoW.Two.Sdk.Beta.Be.Testing;
@@ -25,6 +28,8 @@ namespace Ai.Tests.E2E;
 ///     none the unscoped bucket
 ///   - the providers are scripted (<see cref="Caller"/>): every call answers <c>{"relevance":"close"}</c> unless a test
 ///     sets its own answer
+///   - a public image: the host serves <see cref="Poster"/> at <see cref="PosterPath"/>, and the module's image client
+///     reaches the host through the test server, as it would a CDN over the network
 /// </remarks>
 public sealed class AiApiFixture : MultiHostFixture, IAsyncLifetime
 {
@@ -36,6 +41,12 @@ public sealed class AiApiFixture : MultiHostFixture, IAsyncLifetime
 
     /// <summary>Holds this service's audience.</summary>
     public const string Audience = "https://ai.example.test/";
+
+    /// <summary>Holds the path the test host serves <see cref="Poster"/> at, a public image.</summary>
+    public const string PosterPath = "/e2e/poster.png";
+
+    /// <summary>Gets the poster's bytes: a PNG signature and a few bytes, enough to read as a PNG.</summary>
+    public static byte[] Poster { get; } = [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44, 0x52];
 
     private static readonly SymmetricSecurityKey SigningKey = new(Encoding.UTF8.GetBytes("ai-e2e-signing-key-0123456789abcdef-not-a-secret"));
 
@@ -52,10 +63,13 @@ public sealed class AiApiFixture : MultiHostFixture, IAsyncLifetime
                 ["AllowedHosts"] = PublicHost + ";localhost",
                 ["Logging:LogLevel:Default"] = "Warning",
                 ["Ai:Module:RetryDelay"] = "00:00:00",
+                ["Ai:Module:ImageFetchHosts:0"] = "localhost",
                 ["Ai:Worker:PollInterval"] = "00:00:00.100",
             }),
             ConfigureServicesHook = services =>
             {
+                services.AddSingleton<IStartupFilter, PosterFilter>();
+                services.AddHttpClient(AiModuleConstants.ImageHttpClientName).ConfigurePrimaryHttpMessageHandler(() => Host!.Server.CreateHandler());
                 services.AddSingleton<IAiModelCaller>(Caller);
                 services.AddSingleton<IAiScopeAccess, ClaimScopeAccess>();
                 services.PostConfigure<JwtBearerOptions>(JwtBearerDefaults.AuthenticationScheme, options =>
@@ -109,6 +123,26 @@ public sealed class AiApiFixture : MultiHostFixture, IAsyncLifetime
     Task IAsyncLifetime.InitializeAsync() => StartAsync().AsTask();
 
     Task IAsyncLifetime.DisposeAsync() => DisposeAsync().AsTask();
+
+    /// <summary>Serves <see cref="Poster"/> at <see cref="PosterPath"/> ahead of the host's own pipeline, as a public image host.</summary>
+    private sealed class PosterFilter : IStartupFilter
+    {
+        public Action<IApplicationBuilder> Configure(Action<IApplicationBuilder> next) => app =>
+        {
+            app.Use(async (context, following) =>
+            {
+                if (context.Request.Path != PosterPath)
+                {
+                    await following(context);
+                    return;
+                }
+
+                context.Response.ContentType = "image/png";
+                await context.Response.Body.WriteAsync(Poster);
+            });
+            next(app);
+        };
+    }
 
     /// <summary>Grants a token's <c>tenant</c> claim as <c>tenant:{id}</c>, an <c>operator</c> claim every scope, and none
     /// the unscoped bucket: a multi-tenant host's rule.</summary>

@@ -1,6 +1,9 @@
+using WoW.Two.Sdk.Beta.Be.Ai.Runs;
+
 namespace WoW.Two.Sdk.Beta.Be.Ai.Providers;
 
-/// <summary>Represents one model attempt: rendered messages, the answer's schema and the call parameters.</summary>
+/// <summary>Represents one model attempt: rendered messages, the images sent with the user message, the answer's schema
+/// and the call parameters.</summary>
 public sealed record AiCallRequest
 {
     /// <summary>Gets the model to call.</summary>
@@ -11,6 +14,10 @@ public sealed record AiCallRequest
 
     /// <summary>Gets the rendered user message.</summary>
     public required string User { get; init; }
+
+    /// <summary>Gets the images sent before the user message's text, in order, each with an <c>image/*</c> media type; the
+    /// module resolved and checked them.</summary>
+    public IReadOnlyList<AiImageContent> Images { get; init; } = [];
 
     /// <summary>Gets the answer's JSON schema as text (an object schema); none takes free text.</summary>
     public string? JsonSchema { get; init; }

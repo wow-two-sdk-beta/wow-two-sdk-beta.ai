@@ -16,6 +16,10 @@ export interface InferenceModel {
   readonly attempt: number;
   readonly subject?: string | null;
   readonly inputHash: string;
+  /** How many images the call sent. */
+  readonly imageCount: number;
+  /** The SHA-256 of each image sent, in order; never the bytes. */
+  readonly imageHashes: readonly string[];
   readonly inputTokens: number;
   readonly outputTokens: number;
   readonly cacheReadTokens: number;

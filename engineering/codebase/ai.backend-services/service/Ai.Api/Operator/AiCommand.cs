@@ -163,8 +163,8 @@ public static class AiCommand
 
         private async Task<int> SavePromptAsync(CancellationToken ct)
         {
-            if (!args.TryDouble("temperature", out var temperature) || !args.TryInt("max-tokens", out var maxTokens))
-                return await Usage("'--temperature' and '--max-tokens' are numbers");
+            if (!args.TryDouble("temperature", out var temperature) || !args.TryInt("max-tokens", out var maxTokens) || !args.TryInt("max-images", out var maxImages))
+                return await Usage("'--temperature', '--max-tokens' and '--max-images' are numbers");
 
             return await ReplyAsync(Prompts.SavePromptAsync(new PromptDraft
             {
@@ -172,7 +172,7 @@ public static class AiCommand
                 ModelMatch = args.Value("model-match"),
                 SystemTemplate = await ReadTextAsync(args.Value("system-file")!, ct),
                 UserTemplate = await ReadTextAsync(args.Value("user-file")!, ct),
-                Parameters = new PromptParameters { Temperature = temperature, MaxOutputTokens = maxTokens, Effort = args.Value("effort") },
+                Parameters = new PromptParameters { Temperature = temperature, MaxOutputTokens = maxTokens, Effort = args.Value("effort"), MaxImages = maxImages },
                 Note = args.Value("note"),
                 By = args.Value("by"),
             }, ct));
@@ -246,6 +246,7 @@ public static class AiCommand
             {
                 UseCase = args.Value("use-case")!,
                 Variables = variables,
+                Images = args.Images("image"),
                 Subject = args.Value("subject"),
                 Version = version,
                 Label = args.Value("label"),
@@ -314,6 +315,7 @@ public static class AiCommand
                 Set = args.Value("set")!,
                 Subject = args.Value("subject"),
                 Input = input,
+                Images = args.Options.ContainsKey("image") ? args.Images("image") : null,
                 Expected = args.Value("expected")!,
                 Tags = args.List("tags"),
                 LabelledBy = args.Value("by"),

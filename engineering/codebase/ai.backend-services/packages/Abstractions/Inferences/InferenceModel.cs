@@ -35,8 +35,15 @@ public sealed record InferenceModel
     /// <summary>Gets what the call was about.</summary>
     public string? Subject { get; init; }
 
-    /// <summary>Gets the SHA-256 of the rendered messages, lowercase hex.</summary>
+    /// <summary>Gets the SHA-256 of the rendered messages, lowercase hex; it covers the images' bytes when the prompt took
+    /// images.</summary>
     public required string InputHash { get; init; }
+
+    /// <summary>Gets how many images the attempt sent.</summary>
+    public int ImageCount { get; init; }
+
+    /// <summary>Gets the SHA-256 of each image sent, in order, lowercase hex; never the bytes.</summary>
+    public IReadOnlyList<string> ImageHashes { get; init; } = [];
 
     /// <summary>Gets the input tokens, cached ones included.</summary>
     public long InputTokens { get; init; }

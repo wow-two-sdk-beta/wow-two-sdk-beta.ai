@@ -2,6 +2,7 @@ using System.Diagnostics;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using WoW.Two.Sdk.Beta.Be.Ai.Inferences;
+using WoW.Two.Sdk.Beta.Be.Ai.Module.Images;
 using WoW.Two.Sdk.Beta.Be.Ai.Module.Persistence;
 using WoW.Two.Sdk.Beta.Be.Ai.Module.Prices;
 using WoW.Two.Sdk.Beta.Be.Ai.Module.Prompts;
@@ -14,43 +15,55 @@ using WoW.Two.Sdk.Beta.Be.Foundation.Results;
 
 namespace WoW.Two.Sdk.Beta.Be.Ai.Module.Runs;
 
-/// <summary>Runs a use case in process: resolves and renders its prompt for every routed model before any call, answers
-/// from a stored inference of the same data scope when one matches, else calls each model in turn with retries on
-/// transient failures, checks the answer against the output schema, and logs every attempt with its tokens, cost and
-/// scope.</summary>
-/// <remarks>An eval run sends the prompt it pinned when it was queued (<see cref="RunPinnedAsync"/>), not the one the
-/// registry resolves now.</remarks>
+/// <summary>Runs a use case in process: resolves and renders its prompt for every routed model, and the images those prompts
+/// take, before any call; answers from a stored inference of the same data scope when one matches, else calls each model
+/// in turn with retries on transient failures, checks the answer against the output schema, and logs every attempt with
+/// its tokens, cost, scope and image hashes.</summary>
+/// <remarks>
+///   - an eval run sends the prompt it pinned when it was queued (<see cref="RunPinnedAsync"/>), not the one the registry
+///     resolves now, with the images it checked against the batch's pins
+///   - a prompt takes the first <see cref="PromptParameters.MaxImages"/> of the call's images; their bytes join its input
+///     hash, so a stored answer is reused only for the same images. A prompt that takes none never resolves them.
+/// </remarks>
 /// <param name="db">The module's store.</param>
 /// <param name="caller">The provider seam, one attempt per call.</param>
-/// <param name="options">The module's settings: retries, backoff and the default output budget.</param>
+/// <param name="images">Resolves and checks the call's images.</param>
+/// <param name="options">The module's settings: retries, backoff, the default output budget and the image limits.</param>
 /// <param name="time">The clock backoff waits on.</param>
-internal sealed class ModuleAiRunner(AiDbContext db, IAiModelCaller caller, IOptions<AiModuleOptions> options, TimeProvider time) : IAiRunner
+internal sealed class ModuleAiRunner(AiDbContext db, IAiModelCaller caller, AiImageLoader images, IOptions<AiModuleOptions> options, TimeProvider time) : IAiRunner
 {
     /// <summary>Holds the longest error message an inference keeps.</summary>
     private const int MaxErrorLength = 500;
 
     /// <inheritdoc />
     public Task<Result<AiRunModel>> RunAsync(AiRunRequest request, CancellationToken cancellationToken = default) =>
-        RunCoreAsync(request, pinned: null, cancellationToken);
+        RunCoreAsync(request, pinned: null, preloaded: null, cancellationToken);
 
     /// <summary>Runs <paramref name="request"/> on its one model with the prompt an eval run pinned: that row's text,
     /// parameters and the output schema as they were when the run was queued, whatever the registry holds now.</summary>
     /// <param name="request">The call; <see cref="AiRunRequest.Models"/> names exactly one model.</param>
     /// <param name="pinned">The pinned prompt.</param>
+    /// <param name="preloaded">The request's first images, already resolved and checked against the batch's pins; none
+    /// resolves them here.</param>
     /// <param name="cancellationToken">The token that cancels the call.</param>
-    internal Task<Result<AiRunModel>> RunPinnedAsync(AiRunRequest request, PinnedPrompt pinned, CancellationToken cancellationToken)
+    internal Task<Result<AiRunModel>> RunPinnedAsync(AiRunRequest request, PinnedPrompt pinned, IReadOnlyList<LoadedImage>? preloaded, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(pinned);
-        return RunCoreAsync(request, pinned, cancellationToken);
+        return RunCoreAsync(request, pinned, preloaded, cancellationToken);
     }
 
-    private async Task<Result<AiRunModel>> RunCoreAsync(AiRunRequest request, PinnedPrompt? pinned, CancellationToken cancellationToken)
+    private async Task<Result<AiRunModel>> RunCoreAsync(AiRunRequest request, PinnedPrompt? pinned, IReadOnlyList<LoadedImage>? preloaded, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(request);
+        // A wire body may send "images": null; it reads as no image.
+        if (request.Images is null)
+            request = request with { Images = [] };
         if (request.Subject is { Length: > AiConstants.MaxSubjectLength })
             return Result<AiRunModel>.Fail(AiErrors.Invalid($"A subject is at most {AiConstants.MaxSubjectLength} characters."));
         if (AiScopes.Check(request.Scope) is { } scopeError)
             return Result<AiRunModel>.Fail(scopeError);
+        if (AiImages.Check(request.Images, options.Value) is { } imageError)
+            return Result<AiRunModel>.Fail(imageError);
 
         var loaded = await PromptBook.LoadAsync(db, request.UseCase, cancellationToken);
         if (loaded is Result<PromptBook>.Failure { Error: var loadError })
@@ -61,7 +74,11 @@ internal sealed class ModuleAiRunner(AiDbContext db, IAiModelCaller caller, IOpt
         if (planned is Result<IReadOnlyList<AttemptPlan>>.Failure { Error: var planError })
             return Result<AiRunModel>.Fail(planError);
 
-        var plans = ((Result<IReadOnlyList<AttemptPlan>>.Success)planned).Value;
+        var withImages = await ResolveImagesAsync(((Result<IReadOnlyList<AttemptPlan>>.Success)planned).Value, request, preloaded, cancellationToken);
+        if (withImages is Result<IReadOnlyList<AttemptPlan>>.Failure { Error: var imageLoadError })
+            return Result<AiRunModel>.Fail(imageLoadError);
+
+        var plans = ((Result<IReadOnlyList<AttemptPlan>>.Success)withImages).Value;
         var scope = AiScopes.Store(request.Scope);
         var settings = options.Value;
         var prices = await LoadPricesAsync(plans, cancellationToken);
@@ -129,8 +146,7 @@ internal sealed class ModuleAiRunner(AiDbContext db, IAiModelCaller caller, IOpt
             var parameters = prompt.Parameters with { MaxOutputTokens = prompt.Parameters.MaxOutputTokens ?? defaultMaxTokens };
             var system = PromptTemplates.Render(prompt.SystemTemplate, request.Variables, missing);
             var user = PromptTemplates.Render(prompt.UserTemplate, request.Variables, missing);
-            var inputHash = AiHashes.Input(system, user, book.UseCase.OutputSchema, reference.ToString(), parameters);
-            plans.Add(new AttemptPlan(reference, prompt, system, user, parameters, inputHash, book.UseCase.OutputSchema));
+            plans.Add(new AttemptPlan(reference, prompt, system, user, parameters, book.UseCase.OutputSchema, ImageCount(parameters, request)));
         }
 
         if (plans.Count == 0)
@@ -160,8 +176,41 @@ internal sealed class ModuleAiRunner(AiDbContext db, IAiModelCaller caller, IOpt
             return Result<IReadOnlyList<AttemptPlan>>.Fail(AiErrors.Invalid(
                 $"The pinned prompt of AI use case '{book.UseCase.Key}' needs {(missing.Count == 1 ? "a variable" : "variables")} it was not given: {string.Join(", ", missing)}."));
 
-        var inputHash = AiHashes.Input(system, user, pinned.OutputSchema, reference!.ToString(), parameters);
-        return Result<IReadOnlyList<AttemptPlan>>.Ok([new AttemptPlan(reference, prompt, system, user, parameters, inputHash, pinned.OutputSchema)]);
+        return Result<IReadOnlyList<AttemptPlan>>.Ok([new AttemptPlan(reference!, prompt, system, user, parameters, pinned.OutputSchema, ImageCount(parameters, request))]);
+    }
+
+    /// <summary>Gets how many of the call's images a prompt sends: the first <see cref="PromptParameters.MaxImages"/>.</summary>
+    private static int ImageCount(PromptParameters parameters, AiRunRequest request) =>
+        Math.Min(Math.Max(0, parameters.MaxImages ?? 0), request.Images.Count);
+
+    /// <summary>Resolves the images the planned prompts send, once for the route (the most any prompt takes), and sets each
+    /// plan's images and input hash; nothing is resolved when no prompt takes an image.</summary>
+    private async Task<Result<IReadOnlyList<AttemptPlan>>> ResolveImagesAsync(IReadOnlyList<AttemptPlan> plans, AiRunRequest request,
+        IReadOnlyList<LoadedImage>? preloaded, CancellationToken cancellationToken)
+    {
+        var needed = plans.Max(plan => plan.ImageCount);
+        IReadOnlyList<LoadedImage> resolved = [];
+        if (needed > 0 && preloaded is { } given && given.Count >= needed)
+        {
+            resolved = given;
+        }
+        else if (needed > 0)
+        {
+            var result = await images.LoadAsync([.. request.Images.Take(needed)], cancellationToken);
+            if (result is Result<IReadOnlyList<LoadedImage>>.Failure { Error: var error })
+                return Result<IReadOnlyList<AttemptPlan>>.Fail(error);
+            resolved = ((Result<IReadOnlyList<LoadedImage>>.Success)result).Value;
+        }
+
+        return Result<IReadOnlyList<AttemptPlan>>.Ok([.. plans.Select(plan =>
+        {
+            IReadOnlyList<LoadedImage> sent = [.. resolved.Take(plan.ImageCount)];
+            return plan with
+            {
+                Images = sent,
+                InputHash = AiHashes.Input(plan.System, plan.User, plan.Schema, plan.Model.ToString(), plan.Parameters, [.. sent.Select(image => image.Sha256)]),
+            };
+        })]);
     }
 
     /// <summary>Reads the price rows of every planned model.</summary>
@@ -201,6 +250,8 @@ internal sealed class ModuleAiRunner(AiDbContext db, IAiModelCaller caller, IOpt
         activity?.SetTag("gen_ai.request.model", plan.Model.Model);
         activity?.SetTag("gen_ai.prompt.name", useCase.Key);
         activity?.SetTag("gen_ai.prompt.version", plan.Prompt.Version);
+        if (plan.Images.Count > 0)
+            activity?.SetTag("ai.request.images", plan.Images.Count);
 
         var result = await CallAsync(useCase, plan, cancellationToken);
         var (outcome, kind, error, answer) = Classify(result, plan.Schema);
@@ -230,6 +281,8 @@ internal sealed class ModuleAiRunner(AiDbContext db, IAiModelCaller caller, IOpt
             Attempt = attempt,
             Subject = request.Subject,
             InputHash = plan.InputHash,
+            ImageCount = plan.Images.Count,
+            ImageHashes = [.. plan.Images.Select(image => image.Sha256)],
             InputTokens = result.InputTokens,
             OutputTokens = result.OutputTokens,
             CacheReadTokens = result.CacheReadTokens,
@@ -264,6 +317,7 @@ internal sealed class ModuleAiRunner(AiDbContext db, IAiModelCaller caller, IOpt
                 Model = plan.Model,
                 System = plan.System,
                 User = plan.User,
+                Images = [.. plan.Images.Select(image => image.Content)],
                 JsonSchema = plan.Schema,
                 SchemaName = useCase.Key,
                 Temperature = plan.Parameters.Temperature,
@@ -314,6 +368,14 @@ internal sealed class ModuleAiRunner(AiDbContext db, IAiModelCaller caller, IOpt
     private static string? Trim(string? text, int length = MaxErrorLength) =>
         text is null ? null : text.Length <= length ? text : text[..length];
 
-    /// <summary>Holds one routed model's resolved and rendered prompt, with the output schema its answer must match.</summary>
-    private sealed record AttemptPlan(AiModelRef Model, PromptModel Prompt, string System, string User, PromptParameters Parameters, string InputHash, string? Schema);
+    /// <summary>Holds one routed model's resolved and rendered prompt, with the output schema its answer must match and how
+    /// many of the call's images it takes; <see cref="ResolveImagesAsync"/> sets the images and the input hash.</summary>
+    private sealed record AttemptPlan(AiModelRef Model, PromptModel Prompt, string System, string User, PromptParameters Parameters, string? Schema, int ImageCount)
+    {
+        /// <summary>Gets the images the attempt sends, resolved and checked.</summary>
+        public IReadOnlyList<LoadedImage> Images { get; init; } = [];
+
+        /// <summary>Gets the attempt's input hash, its images included.</summary>
+        public string InputHash { get; init; } = string.Empty;
+    }
 }

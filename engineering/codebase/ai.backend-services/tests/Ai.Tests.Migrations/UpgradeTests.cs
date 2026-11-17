@@ -3,6 +3,7 @@ using Dapper;
 using Microsoft.Extensions.DependencyInjection;
 using Npgsql;
 using WoW.Two.Sdk.Beta.Be.Ai.Evals;
+using WoW.Two.Sdk.Beta.Be.Ai.Inferences;
 using WoW.Two.Sdk.Beta.Be.Ai.Module;
 using WoW.Two.Sdk.Beta.Be.Foundation.Results;
 using WoW.Two.Sdk.Beta.Be.Testing.Data.Migrations;
@@ -11,7 +12,8 @@ namespace Ai.Tests.Migrations;
 
 /// <summary>The queue's migrations as a release meets them: a database at <c>003</c> with eval history upgrades to the
 /// queue, its runs reading as succeeded with their scored items, its indexes valid and its checks validated; an index left
-/// invalid by an interrupted concurrent build is rebuilt when <c>005</c> runs again.</summary>
+/// invalid by an interrupted concurrent build is rebuilt when <c>005</c> runs again; a <c>005</c> database's calls and items
+/// read as text-only after <c>006</c>.</summary>
 /// <param name="fixture">The shared container, reset before each test.</param>
 [Collection(MigratorCollection.Name)]
 public sealed class UpgradeTests(MigratorPostgresFixture fixture) : IAsyncLifetime
@@ -38,12 +40,12 @@ public sealed class UpgradeTests(MigratorPostgresFixture fixture) : IAsyncLifeti
         await using var migrator = MigrationTests.CreateMigrator(fixture, options => options.AllowRollback = true);
         var runner = migrator.RunnerFor(Set);
         (await runner.ApplyPendingAsync("test")).ValueOrThrow();
-        (await runner.RollbackAsync(targetOrdinal: 3)).ValueOrThrow().Should().Equal("005-eval-run-queue-indexes", "004-eval-run-queue");
+        (await runner.RollbackAsync(targetOrdinal: 3)).ValueOrThrow().Should().Equal("006-image-inputs", "005-eval-run-queue-indexes", "004-eval-run-queue");
         await SeedHistoryAt003Async();
 
         var applied = (await runner.ApplyPendingAsync("release")).ValueOrThrow();
 
-        applied.Should().Equal("004-eval-run-queue", "005-eval-run-queue-indexes");
+        applied.Should().Equal("004-eval-run-queue", "005-eval-run-queue-indexes", "006-image-inputs");
         await using var connection = new NpgsqlConnection(fixture.ConnectionString);
         var run = await connection.QuerySingleAsync<(string Status, int Total, int Done, string Scope, Guid? Batch, Guid? Prompt)>(
             $"select status, items_total, items_done, scope, batch_id, prompt_id from {Schema}.ai_eval_runs where id = @RunId", new { RunId });
@@ -90,6 +92,31 @@ public sealed class UpgradeTests(MigratorPostgresFixture fixture) : IAsyncLifeti
 
         applied.Should().Equal("005-eval-run-queue-indexes");
         await AssertQueueIndexesValidAsync(connection);
+    }
+
+    [Fact]
+    public async Task Apply_ShouldUpgradeA005Database_ItsCallsAndItemsReadingAsTextOnly()
+    {
+        await using var migrator = MigrationTests.CreateMigrator(fixture, options => options.AllowRollback = true);
+        var runner = migrator.RunnerFor(Set);
+        (await runner.ApplyPendingAsync("test")).ValueOrThrow();
+        (await runner.RollbackAsync(targetOrdinal: 5)).ValueOrThrow().Should().Equal("006-image-inputs");
+        await SeedHistoryAt003Async();
+
+        (await runner.ApplyPendingAsync("release")).ValueOrThrow().Should().Equal("006-image-inputs");
+
+        await using var connection = new NpgsqlConnection(fixture.ConnectionString);
+        (await connection.QuerySingleAsync<(int Count, string[] Hashes)>($"select image_count, image_hashes from {Schema}.ai_inferences"))
+            .Should().Match<(int Count, string[] Hashes)>(row => row.Count == 0 && row.Hashes.Length == 0);
+        (await connection.QueryAsync<string>($"select images::text from {Schema}.ai_eval_items")).Should().HaveCount(2).And.OnlyContain(images => images == "[]");
+
+        var services = new ServiceCollection().AddLogging();
+        services.AddAi().Configure(options => options.ConnectionString = fixture.ConnectionString);
+        await using var provider = services.BuildServiceProvider();
+        await using var scope = provider.CreateAsyncScope();
+        (await scope.ServiceProvider.GetRequiredService<IEvalsBroker>().GetItemAsync(FirstItem)).ValueOrThrow().Images.Should().BeEmpty();
+        (await scope.ServiceProvider.GetRequiredService<IInferencesBroker>().ListAsync(new InferenceQuery { UseCase = "relevance" })).ValueOrThrow()
+            .Should().ContainSingle().Which.ImageHashes.Should().BeEmpty();
     }
 
     private static async Task AssertQueueIndexesValidAsync(NpgsqlConnection connection)

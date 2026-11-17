@@ -184,6 +184,32 @@ public abstract class EvalsBrokerConformance
         Error(await Broker.ExportSetAsync(NewKey())).Type.Should().Be(AppErrorType.NotFound);
     }
 
+    /// <summary>An item keeps its image references, never bytes, through a read, a list, an export and an import; a run
+    /// whose prompt takes no image ignores them, unreadable ones included; a malformed reference is refused.</summary>
+    [Fact]
+    public async Task Items_ShouldKeepTheirImageReferences_ThroughExportAndImport()
+    {
+        var set = await SetAsync();
+        AiImageRef[] images = [new() { Key = "conformance:poster-1", MediaType = "image/png" }, new() { Uri = "https://images.example.test/poster-2.jpg" }];
+
+        var item = Value(await Broker.AddItemAsync(new EvalItemDraft { Set = set, Input = Title("poster"), Images = images, Expected = """{"relevance":"close"}""" }));
+        var export = Value(await Broker.ExportSetAsync(set));
+        var key = NewKey();
+        Value(await Broker.ImportSetAsync(export with { Set = export.Set with { Key = key }, Items = [.. export.Items.Select(one => one with { Id = Guid.Empty })] }));
+        var run = Value(await Broker.RunAsync(new EvalRunRequest { Set = set, Model = Model }));
+
+        item.Images.Should().Equal(images);
+        Value(await Broker.GetItemAsync(item.Id)).Images.Should().Equal(images);
+        Value(await Broker.ListItemsAsync(set)).Single().Images.Should().Equal(images);
+        export.Items.Single().Images.Should().Equal(images);
+        Value(await Broker.ListItemsAsync(key)).Single().Images.Should().Equal(images);
+        run.Status.Should().Be(EvalRunStatus.Succeeded, "the prompt takes no image, so none is resolved");
+        Error(await Broker.AddItemAsync(new EvalItemDraft
+        {
+            Set = set, Input = Title("x"), Images = [new AiImageRef { Uri = "https://a.example.test/x.png", Key = "both" }], Expected = "{}",
+        })).Type.Should().Be(AppErrorType.Validation);
+    }
+
     /// <summary>Creates a rewrite use case with one prompt that renders <c>{{title}}</c>, routed to <see cref="Model"/>.</summary>
     /// <returns>Its key.</returns>
     protected async Task<string> UseCaseAsync()

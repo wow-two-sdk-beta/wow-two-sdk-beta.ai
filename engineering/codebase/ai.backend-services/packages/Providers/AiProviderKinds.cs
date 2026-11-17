@@ -26,4 +26,11 @@ public static class AiProviderKinds
         kind = kind?.Trim().ToLowerInvariant();
         return kind is Anthropic or OpenAi or Ollama ? kind : null;
     }
+
+    /// <summary>Gets whether a kind's client sends images: Anthropic as base64 image blocks, OpenAI-compatible hosts as
+    /// <c>data:</c> URL image parts, Ollama (OllamaSharp 5.5) as the message's base64 <c>images</c>. A call with images to
+    /// any other kind fails as <see cref="Runs.AiErrorKind.BadRequest"/> without reaching the provider; a model that takes
+    /// no images answers its provider's own 400, classified the same way.</summary>
+    /// <param name="kind">The resolved kind.</param>
+    public static bool TakesImages(string kind) => kind is Anthropic or OpenAi or Ollama;
 }

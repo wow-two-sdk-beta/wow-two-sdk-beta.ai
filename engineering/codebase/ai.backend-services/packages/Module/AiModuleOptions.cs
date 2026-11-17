@@ -26,4 +26,24 @@ public sealed class AiModuleOptions
     /// <summary>Gets or sets how often a running eval run beats, beside the beat each finished item gives; a worker fails a
     /// run quiet for <see cref="AiEvalWorkerOptions.OrphanAfter"/> as orphaned, so keep this well below it.</summary>
     public TimeSpan EvalHeartbeatInterval { get; set; } = TimeSpan.FromSeconds(15);
+
+    /// <summary>Gets or sets the most images one call or eval item carries, 0 to <see cref="AiConstants.MaxImages"/>; 0
+    /// refuses images. A call over it is refused before anything is resolved or called.</summary>
+    public int MaxImagesPerCall { get; set; } = 4;
+
+    /// <summary>Gets or sets the largest image in bytes, 1 B to 20 MB; a larger one is refused before any call.</summary>
+    public int MaxImageBytes { get; set; } = 5 * 1024 * 1024;
+
+    /// <summary>Gets or sets the image media types a call may send, each one of <see cref="AiConstants.ImageMediaTypes"/>;
+    /// none takes all of them.</summary>
+    public string[]? ImageMediaTypes { get; set; }
+
+    /// <summary>Gets or sets how long the module's own HTTP(S) fetch waits for one image before it gives up.</summary>
+    public TimeSpan ImageFetchTimeout { get; set; } = TimeSpan.FromSeconds(10);
+
+    /// <summary>Gets or sets the hosts the module's own HTTP(S) fetch may read images from, compared case-insensitively;
+    /// a leading <c>*.</c> also admits subdomains. Empty, the default, turns the fetch off, so a caller who may run a
+    /// prompt cannot make the host request an arbitrary or internal URL; a host's own <c>IAiImageResolver</c> is
+    /// unaffected.</summary>
+    public string[] ImageFetchHosts { get; set; } = [];
 }

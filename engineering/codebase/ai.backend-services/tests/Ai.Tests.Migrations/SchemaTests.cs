@@ -64,6 +64,22 @@ public sealed class SchemaTests(MigratorPostgresFixture fixture) : IAsyncLifetim
         view.Should().Be(0);
     }
 
+    [Theory]
+    [InlineData("ai_inferences", "image_count", "integer", "0")]
+    [InlineData("ai_inferences", "image_hashes", "ARRAY", "'{}'::text[]")]
+    [InlineData("ai_eval_items", "images", "jsonb", "'[]'::jsonb")]
+    [InlineData("ai_eval_batch_items", "image_hashes", "ARRAY", "'{}'::text[]")]
+    public async Task Apply_ShouldAddTheImageColumns_NotNullWithConstantDefaults(string table, string column, string type, string defaultValue)
+    {
+        await using var connection = new NpgsqlConnection(fixture.ConnectionString);
+
+        var found = await connection.QuerySingleAsync<(string Type, string Nullable, string Default)>(
+            "select data_type, is_nullable, column_default from information_schema.columns where table_schema = @Schema and table_name = @Table and column_name = @Column",
+            new { Schema, Table = table, Column = column });
+
+        found.Should().Be((type, "NO", defaultValue));
+    }
+
     [Fact]
     public async Task Prompts_ShouldRefuseASecondRow_ForTheSameUseCaseMatchAndVersion()
     {

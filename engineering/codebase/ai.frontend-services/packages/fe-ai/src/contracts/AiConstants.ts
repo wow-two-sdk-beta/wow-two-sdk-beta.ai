@@ -20,4 +20,12 @@ export const AiConstants = {
   maxScopeLength: 128,
   /** The data scope of calls, sets and runs made without one; a filter names it to keep only those. */
   unscoped: '',
+  /** The most images a prompt takes, and the highest per-call limit a service may set. */
+  maxImages: 20,
+  /** The longest image URI. */
+  maxImageUriLength: 2048,
+  /** The longest image key, such as `fss:{id}`. */
+  maxImageKeyLength: 256,
+  /** The image media types every provider takes. */
+  imageMediaTypes: ['image/jpeg', 'image/png', 'image/webp', 'image/gif'],
 } as const;

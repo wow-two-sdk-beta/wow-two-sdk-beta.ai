@@ -1,7 +1,11 @@
+using WoW.Two.Sdk.Beta.Be.Ai.Runs;
+
 namespace WoW.Two.Sdk.Beta.Be.Ai.Evals;
 
-/// <summary>Represents one eval item: the prompt variables frozen when it was added, and the expected answer.</summary>
-/// <remarks>The input stays in the database it was added to; an export carries it to the eval bench, never to a repo.</remarks>
+/// <summary>Represents one eval item: the prompt variables and image references frozen when it was added, and the expected
+/// answer.</summary>
+/// <remarks>The input stays in the database it was added to; an export carries it to the eval bench, never to a repo. Images
+/// travel as references only; a run resolves them, and a queued batch pins their hashes.</remarks>
 public sealed record EvalItemModel
 {
     /// <summary>Gets the item id.</summary>
@@ -15,6 +19,9 @@ public sealed record EvalItemModel
 
     /// <summary>Gets the prompt variables.</summary>
     public required IReadOnlyDictionary<string, string?> Input { get; init; }
+
+    /// <summary>Gets the images sent with the prompt, in order, as references; never their bytes.</summary>
+    public IReadOnlyList<AiImageRef> Images { get; init; } = [];
 
     /// <summary>Gets the expected answer as a JSON object, such as <c>{"relevance":"close","kind":"runway"}</c>.</summary>
     public required string Expected { get; init; }

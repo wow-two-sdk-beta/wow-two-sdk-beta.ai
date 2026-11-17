@@ -7,6 +7,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Testcontainers.PostgreSql;
 using WoW.Two.Sdk.Beta.Be.Ai.Module;
 using WoW.Two.Sdk.Beta.Be.Ai.Providers;
+using WoW.Two.Sdk.Beta.Be.Ai.Runs;
 using WoW.Two.Sdk.Beta.Be.Ai.Testing.Providers;
 using WoW.Two.Sdk.Beta.Be.Data;
 using WoW.Two.Sdk.Beta.Be.Foundation.Results;
@@ -23,6 +24,9 @@ public sealed class AiVerbTests : IAsyncLifetime
 
     private readonly PostgresFixture postgres = new(new PostgreSqlBuilder().WithImage("postgres:18-alpine").Build());
     private readonly string folder = Path.Combine(Path.GetTempPath(), "ai-verbs-" + Guid.NewGuid().ToString("N"));
+
+    /// <summary>Gets or sets the host's image resolver the verbs compose, when a test needs one.</summary>
+    private IAiImageResolver? resolver;
 
     [Fact]
     public async Task ServiceHost_ShouldDispatchTheAiVerbs_BeforeAnyHost()
@@ -194,6 +198,33 @@ public sealed class AiVerbTests : IAsyncLifetime
             .GetProperty("pricedModels").EnumerateArray().Select(model => model.GetString()).Should().Contain("gpt-6-luna");
     }
 
+    /// <summary>Images from the bench: a prompt that takes one, a run sending a private image by key, and an item keeping a
+    /// key and a public URI as references.</summary>
+    [Fact]
+    public async Task Bench_ShouldSendImagesByKey_AndKeepThemOnItems()
+    {
+        resolver = new PosterImages();
+        var caller = new ScriptedAiModelCaller { Respond = _ => ScriptedAiModelCaller.Answer("""{"relevance":"close"}""") };
+        await SetUpAsync(caller: caller);
+        var prompt = Data(await RunAsync(caller, "prompt", "save", "--use-case", "relevance", "--system-file", Path.Combine(folder, "system.txt"),
+            "--user-file", Path.Combine(folder, "user.txt"), "--max-images", "1"));
+        prompt.GetProperty("parameters").GetProperty("maxImages").GetInt32().Should().Be(1);
+
+        var run = Data(await RunAsync(caller, "run", "--use-case", "relevance", "--var", "title=Poster", "--image", "fss:poster-1", "--image", "fss:ignored"));
+        var item = Data(await RunAsync(caller, "eval", "add", "--set", "afisha-2", "--input-file", Path.Combine(folder, "post-1.json"),
+            "--expected", """{"relevance":"close"}""", "--image", "fss:poster-1", "--image", "https://cdn.example.test/p.jpg"));
+
+        run.GetProperty("attempts")[0].GetProperty("imageCount").GetInt32().Should().Be(1, "the prompt takes the first image only");
+        caller.Requests[^1].Images.Should().ContainSingle().Which.Data.ToArray().Should().Equal(PosterImages.Png);
+        var images = item.GetProperty("images").EnumerateArray().ToList();
+        images[0].GetProperty("key").GetString().Should().Be("fss:poster-1");
+        images[1].GetProperty("uri").GetString().Should().Be("https://cdn.example.test/p.jpg");
+        var (exit, refused) = await RunAsync(caller, "prompt", "save", "--use-case", "relevance", "--system-file", Path.Combine(folder, "system.txt"),
+            "--user-file", Path.Combine(folder, "user.txt"), "--max-images", "many");
+        exit.Should().Be(AiOperatorWire.Refused);
+        refused.GetProperty("error").GetString().Should().Be("usage");
+    }
+
     [Fact]
     public async Task Run_ShouldRefuse_WhenNoModelAnswers_AndPrintTheAttempts()
     {
@@ -268,8 +299,13 @@ public sealed class AiVerbTests : IAsyncLifetime
     private async Task<(int Exit, string Text)> RunTextAsync(ScriptedAiModelCaller? caller, params string[] args)
     {
         using var output = new StringWriter();
-        var exit = await AiCommand.RunAsync(args, Configuration(), output,
-            caller is null ? null : services => services.AddSingleton<IAiModelCaller>(caller));
+        var exit = await AiCommand.RunAsync(args, Configuration(), output, services =>
+        {
+            if (caller is not null)
+                services.AddSingleton<IAiModelCaller>(caller);
+            if (resolver is not null)
+                services.AddSingleton(resolver);
+        });
         return (exit, output.ToString());
     }
 
@@ -313,5 +349,14 @@ public sealed class AiVerbTests : IAsyncLifetime
     {
         using var document = JsonDocument.Parse(line);
         return document.RootElement.Clone();
+    }
+
+    /// <summary>A host resolver for <c>fss:poster-*</c> keys, each a small PNG.</summary>
+    private sealed class PosterImages : IAiImageResolver
+    {
+        public static byte[] Png { get; } = [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 7, 7];
+
+        public Task<AiImageContent?> ResolveAsync(AiImageRef image, CancellationToken cancellationToken = default) =>
+            Task.FromResult(image.Key is { } key && key.StartsWith("fss:poster-", StringComparison.Ordinal) ? new AiImageContent(Png) : null);
     }
 }
