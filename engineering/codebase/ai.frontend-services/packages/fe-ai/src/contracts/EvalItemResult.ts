@@ -8,6 +8,7 @@ export interface EvalItemResult {
   readonly itemId: string;
   readonly subject?: string | null;
   readonly tags: readonly string[];
+  /** The expected answer the item was scored against: the one the run pinned. */
   readonly expected: string;
   /** The model's answer; absent unless the report was requested with answers. */
   readonly answer?: string | null;
@@ -21,4 +22,8 @@ export interface EvalItemResult {
   readonly outcome: AiOutcome;
   readonly rating?: number | null;
   readonly comment?: string | null;
+  /** The content hash of the prompt the run pinned. */
+  readonly promptHash?: string | null;
+  /** Whether the model had a price; a cost of 0 without one is unknown, not free. */
+  readonly priced: boolean;
 }

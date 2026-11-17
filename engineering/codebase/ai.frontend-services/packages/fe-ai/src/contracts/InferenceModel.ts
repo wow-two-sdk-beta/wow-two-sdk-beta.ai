@@ -31,4 +31,6 @@ export interface InferenceModel {
   readonly output?: string | null;
   /** A GUID. */
   readonly evalRunId?: string | null;
+  /** The data scope the call belonged to; absent for the unscoped bucket. */
+  readonly scope?: string | null;
 }

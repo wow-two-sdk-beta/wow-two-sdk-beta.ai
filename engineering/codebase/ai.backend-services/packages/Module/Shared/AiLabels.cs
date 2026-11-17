@@ -50,4 +50,7 @@ internal static class AiLabels
 
     /// <summary>Writes a prompt mode.</summary>
     public static string Mode(PromptMode mode) => Write(mode);
+
+    /// <summary>Writes an eval run's status.</summary>
+    public static string Status(Ai.Evals.EvalRunStatus status) => Write(status);
 }

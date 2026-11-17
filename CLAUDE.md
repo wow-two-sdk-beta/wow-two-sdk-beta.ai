@@ -19,16 +19,18 @@ engineering/             ← the HOW
 ├── deployment/          ← deploy.yml · Dockerfile · docker-compose.yml · deployment.md
 ├── research/ · scripts/ ← analyses · release helpers publish-packages.yml calls
 └── codebase/            ← THE CODE — only place code lives
-    ├── ai.backend-services/    ← Ai.BackendServices.slnx: packages/{Abstractions,Providers,Module,Client,Testing} · service/Ai.Api · tests/Ai.Tests.*
+    ├── ai.backend-services/    ← Ai.BackendServices.slnx: packages/{Abstractions,Providers,Module,Hosting,Client,Testing} · service/Ai.Api · tests/Ai.Tests.*
     └── ai.frontend-services/   ← pnpm workspace: packages/fe-ai (npm: contracts · kit · admin) · apps/web (console)
 ```
 
 ## Rules
 
 - Shape: wow-two-ws/conventions/development/repo/structure/domain-structure.md; repo-specific deltas only in `engineering/development/`.
-- The contract lives in `packages/Abstractions`; Module (Form 1) implements it over `packages/Providers`, and
-  `Ai.Tests.Conformance` runs `PromptsBrokerConformance` (`packages/Testing`) against it; the Client's HTTP brokers
-  join with the HTTP API.
+- The contract lives in `packages/Abstractions`; Module (Form 1) implements it over `packages/Providers`, Hosting maps
+  it to the HTTP API under `api/ai/`, and the Client's HTTP brokers call that API (Forms 2/3). `Ai.Tests.Conformance`
+  runs `PromptsBrokerConformance` and `EvalsBrokerConformance` (`packages/Testing`) against the module and the client.
+- Queued evals repeat exactly: a batch pins its sample, expected answers and scoring, each run its resolved prompt;
+  never make the worker re-resolve what a run pinned. Data scopes (`tenant:{id}`) keep tenants apart in one database.
 - Prompts live in tables only (`ai_prompts`), in `rewrite` or `versioned` mode; never add a prompt file or a prompt
   constant to code. A product seeds its first prompt through the verbs or `IPromptsBroker`.
 - Eval inputs and model answers stay in databases; a repo records only per-run summaries (accuracy, severe misses, cost

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Restores the packed nupkgs in a throwaway consumer, as a product would take them, and compiles a composition root
-# that wires both forms behind the contract plus the test kit. A private packages folder keeps the local versions
+# that wires both forms behind the contract, the HTTP API over Form 1, plus the test kit. A private packages folder keeps the local versions
 # out of the machine's NuGet cache.
 #
 #   pack-smoke.sh <artifact-dir> <version>
@@ -36,6 +36,7 @@ cat > "$consumer/Consumer.csproj" <<XML
     <PackageReference Include="WoW2.Sdk.Beta.Be.Ai.Module" Version="$version" />
     <PackageReference Include="WoW2.Sdk.Beta.Be.Ai.Providers" Version="$version" />
     <PackageReference Include="WoW2.Sdk.Beta.Be.Ai.Client" Version="$version" />
+    <PackageReference Include="WoW2.Sdk.Beta.Be.Ai.Hosting" Version="$version" />
     <PackageReference Include="WoW2.Sdk.Beta.Be.Ai.Testing" Version="$version" />
   </ItemGroup>
 </Project>
@@ -44,6 +45,7 @@ XML
 cat > "$consumer/Program.cs" <<CS
 using Microsoft.Extensions.DependencyInjection;
 using WoW.Two.Sdk.Beta.Be.Ai.Client;
+using WoW.Two.Sdk.Beta.Be.Ai.Hosting;
 using WoW.Two.Sdk.Beta.Be.Ai.Module;
 using Microsoft.Extensions.Configuration;
 using WoW.Two.Sdk.Beta.Be.Ai.Providers;
@@ -53,12 +55,14 @@ using WoW.Two.Sdk.Beta.Be.Ai.Testing.Providers;
 var formOne = new ServiceCollection();
 formOne.AddAiProviders(new ConfigurationBuilder().Build());
 formOne.AddAi().Configure(options => options.ConnectionString = "Host=localhost;Database=ai");
+formOne.AddAiEvalWorker();
+formOne.AddAiApi();
 
 var formThree = new ServiceCollection();
 formThree.AddAiClient(options => options.BaseAddress = new Uri("https://service.example.test/"));
 
-Console.WriteLine("pack smoke: {0}, {1} and both forms resolve from the packed family",
-    nameof(PromptsBrokerConformance), nameof(ScriptedAiModelCaller));
+Console.WriteLine("pack smoke: {0}, {1}, {2}, the API and both forms resolve from the packed family",
+    nameof(PromptsBrokerConformance), nameof(EvalsBrokerConformance), nameof(ScriptedAiModelCaller));
 CS
 
 # No HTTP cache: a core version published minutes ago must resolve, not a cached index that predates it.

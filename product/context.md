@@ -6,15 +6,15 @@
 
 ## Current state
 
-Paused 2026-11-14 at the developer's weekly usage limit; resumes Tuesday 2026-11-18. v0.1's first slice is committed and pushed (`aaab511`: providers, prompts in both modes, the inference log with prices, evals with the report, operator verbs; 260 backend tests). The HTTP API with queued eval runs is half built and uncommitted in the tree; the first eval waits for the developer's API keys. The repo is public; packages are not published yet.
+v0.1 shipped and `10.0.0-beta` is on nuget.org (`d71898b`). v0.2 is built in the tree, uncommitted (2026-11-17): queued evals that repeat exactly (a batch pins its sample, expected answers and scoring, each run its prompt) with an opt-in worker, data scopes for tenants in one database, the HTTP API package (`Ai.Hosting`) with `ai.*` scopes, the Client's five HTTP brokers, and the evals conformance suite on module and client. The first eval waits for the developer's API keys.
 
 ## Active tasks
 
 | Task | Status | Notes |
 |---|---|---|
-| HTTP API, queued eval runs, worker, sampling | paused, partly built, uncommitted | version track v0.1 Iteration 2 |
-| First 10-post eval for SCFD's `ocharo-relevance` | waits for API keys | version track v0.1 Iteration 3 |
-| Publish: ruleset, NuGet policy, npm first version | waits for the developer's hand steps | version track v0.1 Iteration 4 |
+| HTTP API, queued eval runs, worker, sampling, tenant scopes | built, uncommitted; release open | version track v0.2 |
+| First 10-post eval for SCFD's `ocharo-relevance` | waits for API keys | backlog A02 |
+| Publish: ruleset, NuGet policy, npm first version | waits for the developer's hand steps | backlog A04, v0.2 Iteration 5 |
 | SCFD's relevance step on the layer | todo | after the first eval |
 
 ## Open questions

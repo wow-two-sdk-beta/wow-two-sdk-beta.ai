@@ -79,4 +79,7 @@ public sealed record InferenceModel
 
     /// <summary>Gets the eval run the attempt belongs to.</summary>
     public Guid? EvalRunId { get; init; }
+
+    /// <summary>Gets the data scope the call belonged to; none for the unscoped bucket.</summary>
+    public string? Scope { get; init; }
 }

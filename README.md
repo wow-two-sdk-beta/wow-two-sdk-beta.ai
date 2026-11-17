@@ -9,8 +9,9 @@ WoW2 AI: routes model calls across providers with fallback, keeps prompts and th
 | `WoW2.Sdk.Beta.Be.Ai.Abstractions` — the contract | nuget.org | `10.y.z-beta` · `be-v*` | `dotnet add package WoW2.Sdk.Beta.Be.Ai.Abstractions --prerelease` |
 | `WoW2.Sdk.Beta.Be.Ai.Providers` — named model providers and the one-attempt caller | nuget.org | `10.y.z-beta` · `be-v*` | `dotnet add package WoW2.Sdk.Beta.Be.Ai.Providers --prerelease` |
 | `WoW2.Sdk.Beta.Be.Ai.Module` — Form 1, in process | nuget.org | `10.y.z-beta` · `be-v*` | `dotnet add package WoW2.Sdk.Beta.Be.Ai.Module --prerelease` |
-| `WoW2.Sdk.Beta.Be.Ai.Client` — Forms 2 and 3, over HTTP | nuget.org | `10.y.z-beta` · `be-v*` | `dotnet add package WoW2.Sdk.Beta.Be.Ai.Client --prerelease` |
-| `WoW2.Sdk.Beta.Be.Ai.Testing` — scripted model caller and conformance suite | nuget.org | `10.y.z-beta` · `be-v*` | `dotnet add package WoW2.Sdk.Beta.Be.Ai.Testing --prerelease` |
+| `WoW2.Sdk.Beta.Be.Ai.Hosting` — the HTTP API any host mounts (`AddAiApi`, `MapAiApi`) | nuget.org | `10.y.z-beta` · `be-v*` | `dotnet add package WoW2.Sdk.Beta.Be.Ai.Hosting --prerelease` |
+| `WoW2.Sdk.Beta.Be.Ai.Client` — Forms 2 and 3, the five brokers over HTTP | nuget.org | `10.y.z-beta` · `be-v*` | `dotnet add package WoW2.Sdk.Beta.Be.Ai.Client --prerelease` |
+| `WoW2.Sdk.Beta.Be.Ai.Testing` — scripted model caller and the prompts and evals conformance suites | nuget.org | `10.y.z-beta` · `be-v*` | `dotnet add package WoW2.Sdk.Beta.Be.Ai.Testing --prerelease` |
 | `@wow-two-beta/fe-ai` — contract mirror, formatters, eval report view | npm | `0.0.z` · `fe-v*` | `pnpm add @wow-two-beta/fe-ai` |
 | `ai` service image | GHCR | `X.Y.Z` · `v*` | `ghcr.io/wow-two-sdk-beta/wow-two-sdk-beta.ai/ai`, deployed by Wheelhouse |
 
@@ -24,12 +25,28 @@ A product pins the family with one `AiSdkVersion` property beside `BackendSdkVer
 services.AddAiProviders(configuration);
 services.AddAi().Configure(options => options.ConnectionString = "...");
 
-// Then any product code runs a use case; its prompt lives in the ai_prompts table, its route in ai_use_cases.
-var run = await runner.RunAsync(new AiRunRequest { UseCase = "ocharo-relevance", Variables = variables, Subject = subject });
-// run.Outcome, run.Output (JSON), run.Attempts: model, tokens, cost in micro-USD, latency
+services.AddAiEvalWorker();   // optional: runs queued evals in this host
 
-// Forms 2 and 3 — over the running Ai service; brokers land with the HTTP API (backlog)
-services.AddAiClient(options => options.BaseAddress = new Uri("https://ai.example.com/"));
+// Then any product code runs a use case; its prompt lives in the ai_prompts table, its route in ai_use_cases.
+var run = await runner.RunAsync(new AiRunRequest
+{
+    UseCase = "ocharo-relevance", Variables = variables, Subject = subject, Scope = $"tenant:{tenantId}",
+});
+// run.Outcome, run.Output (JSON), run.Attempts: model, tokens, cost in micro-USD, latency, scope
+
+// Queue a repeatable comparison: the sample, expected answers, scoring and each cell's prompt are pinned now.
+var batch = await evals.QueueAsync(new EvalMatrixRequest
+{
+    Set = "afisha-10", Models = ["anthropic/claude-haiku-5-5", "openai/gpt-6-luna"], Versions = [1, 2], Count = 10, Seed = 1,
+});
+
+// Forms 2 and 3 — the same brokers over the running Ai service; swap the registrations, keep the code.
+services.AddAiClient(options => options.BaseAddress = new Uri("https://ai.example.com/"))
+    .AddHttpMessageHandler<HostTokenHandler>();   // the host's own handler: an Identity token with ai.* scopes
+
+// A host serving the API itself: the module or the client behind it, its own authentication in front.
+services.AddAiApi();
+app.MapAiApi();   // api/ai/… — ai.read · ai.run · ai.prompts-manage · ai.evals-manage
 ```
 
 ## Layout
@@ -60,7 +77,7 @@ cd engineering/codebase/ai.frontend-services && pnpm install --frozen-lockfile &
 ## Test it
 
 ```bash
-# Backend: unit, integration, E2E, conformance and migrations tiers; all but unit run PostgreSQL in Docker
+# Backend: unit, providers, integration, E2E, conformance and migrations tiers; all but unit and providers run PostgreSQL in Docker
 # (Testcontainers), and the build also builds the frontend workspace, so Node and pnpm are required
 cd engineering/codebase/ai.backend-services && dotnet test Ai.BackendServices.slnx
 

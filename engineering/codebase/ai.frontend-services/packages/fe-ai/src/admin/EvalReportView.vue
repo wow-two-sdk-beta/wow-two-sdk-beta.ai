@@ -12,7 +12,7 @@ defineProps<{
 }>();
 
 const percent = (value: number) => `${(value * 100).toFixed(1)}%`;
-const outcomeVariant = (outcome: AiOutcome) => (outcome === 'Succeeded' ? BadgeVariant.Success : BadgeVariant.Danger);
+const outcomeVariant = (outcome: AiOutcome) => (outcome === 'succeeded' ? BadgeVariant.Success : BadgeVariant.Danger);
 </script>
 
 <template>
@@ -27,6 +27,7 @@ const outcomeVariant = (outcome: AiOutcome) => (outcome === 'Succeeded' ? BadgeV
           <tr>
             <th class="pr-4">Prompt</th>
             <th class="pr-4">Model</th>
+            <th class="pr-4">Status</th>
             <th class="pr-4">Accuracy</th>
             <th class="pr-4">Severe misses</th>
             <th class="pr-4">Failed</th>
@@ -41,6 +42,7 @@ const outcomeVariant = (outcome: AiOutcome) => (outcome === 'Succeeded' ? BadgeV
           <tr v-for="summary in report.runs" :key="summary.run.id">
             <td class="pr-4">v{{ summary.run.promptVersion }}</td>
             <td class="pr-4">{{ summary.run.provider }}/{{ summary.run.model }}</td>
+            <td class="pr-4">{{ summary.run.status }}</td>
             <td class="pr-4">{{ percent(summary.accuracy) }}</td>
             <td class="pr-4">{{ summary.severeMisses }}</td>
             <td class="pr-4">{{ summary.failed }}</td>

@@ -46,8 +46,14 @@ public sealed record EvalRunSummary
     /// <summary>Gets the answers served from stored inferences.</summary>
     public int FromCache { get; init; }
 
-    /// <summary>Gets the run's cost in micro-USD.</summary>
+    /// <summary>Gets the run's cost in micro-USD, cached answers included at their original cost.</summary>
     public long CostMicroUsd { get; init; }
+
+    /// <summary>Gets the new spend in micro-USD: the cost of answers this run called for, cached ones left out.</summary>
+    public long SpentMicroUsd { get; init; }
+
+    /// <summary>Gets the items whose model had no price, so their cost reads 0 without being free.</summary>
+    public int Unpriced { get; init; }
 
     /// <summary>Gets the cost per item in micro-USD.</summary>
     public long CostPerItemMicroUsd { get; init; }
@@ -89,7 +95,7 @@ public sealed record EvalItemResult
     /// <summary>Gets the item's tags.</summary>
     public IReadOnlyList<string> Tags { get; init; } = [];
 
-    /// <summary>Gets the expected answer.</summary>
+    /// <summary>Gets the expected answer the item was scored against: the one the run pinned.</summary>
     public required string Expected { get; init; }
 
     /// <summary>Gets the scored fields of the answer, as a JSON object; present only when the report asks for outputs.</summary>
@@ -124,4 +130,10 @@ public sealed record EvalItemResult
 
     /// <summary>Gets the rating's comment.</summary>
     public string? Comment { get; init; }
+
+    /// <summary>Gets the content hash of the prompt the run sent: the one it pinned.</summary>
+    public string? PromptHash { get; init; }
+
+    /// <summary>Gets whether the model had a price; a cost of 0 without one is unknown, not free.</summary>
+    public bool Priced { get; init; }
 }

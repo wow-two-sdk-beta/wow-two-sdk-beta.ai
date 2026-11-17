@@ -73,8 +73,12 @@ public static class AiModuleServiceCollectionExtensions
         services.AddScoped<IPromptsBroker, ModulePromptsBroker>();
         services.AddScoped<IModelPricesBroker, ModuleModelPricesBroker>();
         services.AddScoped<IInferencesBroker, ModuleInferencesBroker>();
-        services.AddScoped<IAiRunner, ModuleAiRunner>();
-        services.AddScoped<IEvalsBroker, ModuleEvalsBroker>();
+        services.AddScoped<ModuleAiRunner>();
+        services.AddScoped<IAiRunner>(provider => provider.GetRequiredService<ModuleAiRunner>());
+        services.AddScoped<ModuleEvalsBroker>();
+        services.AddScoped<IEvalsBroker>(provider => provider.GetRequiredService<ModuleEvalsBroker>());
+        services.TryAddSingleton<EvalRunQueue>();
+        services.TryAddSingleton<EvalQueueSignal>();
         services.AddHealthChecks().AddDatabaseReadinessCheck<AiDbContext>("ai-database");
 
         return services.AddOptions<AiModuleOptions>()
@@ -82,7 +86,32 @@ public static class AiModuleServiceCollectionExtensions
             .Validate(options => options.RetriesPerModel is >= 0 and <= 10, "AiModuleOptions.RetriesPerModel must be 0 to 10.")
             .Validate(options => options.RetryDelay >= TimeSpan.Zero, "AiModuleOptions.RetryDelay must not be negative.")
             .Validate(options => options.DefaultMaxOutputTokens > 0, "AiModuleOptions.DefaultMaxOutputTokens must be 1 or more.")
-            .Validate(options => options.MaxEvalParallelism is >= 1 and <= 16, "AiModuleOptions.MaxEvalParallelism must be 1 to 16.");
+            .Validate(options => options.MaxEvalParallelism is >= 1 and <= 16, "AiModuleOptions.MaxEvalParallelism must be 1 to 16.")
+            .Validate(options => options.EvalHeartbeatInterval > TimeSpan.Zero, "AiModuleOptions.EvalHeartbeatInterval must be positive.")
+            .Validate(options => options.MaxEvalItemCalls is >= 1 and <= 1_000_000, "AiModuleOptions.MaxEvalItemCalls must be 1 to 1,000,000.");
+    }
+
+    /// <summary>Registers the eval worker: a hosted service that drains the eval queue <see cref="IEvalsBroker.QueueAsync"/>
+    /// fills, up to <see cref="AiEvalWorkerOptions.MaxConcurrentRuns"/> runs at a time per instance. Opt-in: nothing runs
+    /// queued evals unless a host adds it.</summary>
+    /// <remarks>
+    ///   - needs <see cref="AddAi"/>; runs queued anywhere over the same database, by any instance or the verbs, reach it
+    ///   - claims with <c>FOR UPDATE SKIP LOCKED</c>, so several instances share one queue and never claim a run twice
+    ///   - runs exactly what each run pinned: its batch's items and scoring, its own prompt
+    ///   - writes each run's progress as items finish and a heartbeat every
+    ///     <see cref="AiModuleOptions.EvalHeartbeatInterval"/>; fails a run quiet for
+    ///     <see cref="AiEvalWorkerOptions.OrphanAfter"/> as orphaned
+    /// </remarks>
+    /// <param name="services">The service collection to configure.</param>
+    /// <returns>The options builder for the poll interval, the orphan threshold and the concurrency.</returns>
+    public static OptionsBuilder<AiEvalWorkerOptions> AddAiEvalWorker(this IServiceCollection services)
+    {
+        ArgumentNullException.ThrowIfNull(services);
+        services.AddHostedService<AiEvalWorker>();
+        return services.AddOptions<AiEvalWorkerOptions>()
+            .Validate(options => options.PollInterval > TimeSpan.Zero, "AiEvalWorkerOptions.PollInterval must be positive.")
+            .Validate(options => options.OrphanAfter > TimeSpan.Zero, "AiEvalWorkerOptions.OrphanAfter must be positive.")
+            .Validate(options => options.MaxConcurrentRuns is >= 1 and <= 16, "AiEvalWorkerOptions.MaxConcurrentRuns must be 1 to 16.");
     }
 
     private static string ConnectionString(IServiceProvider provider) =>

@@ -20,4 +20,8 @@ public sealed record InferenceQuery
 
     /// <summary>Gets the most rows to return, 1 to 1000.</summary>
     public int Limit { get; init; } = 100;
+
+    /// <summary>Gets the data scopes to keep, <see cref="AiConstants.Unscoped"/> for calls made without one; none keeps
+    /// every scope, an empty list keeps nothing.</summary>
+    public IReadOnlyList<string>? Scopes { get; init; }
 }

@@ -18,4 +18,12 @@ public sealed class AiModuleOptions
 
     /// <summary>Gets or sets the most items an eval run sends at once, 1 to 16.</summary>
     public int MaxEvalParallelism { get; set; } = 4;
+
+    /// <summary>Gets or sets the most item calls one eval request may ask for: models × prompt targets × sampled items. A
+    /// request over it is refused before anything is queued or called.</summary>
+    public int MaxEvalItemCalls { get; set; } = 2000;
+
+    /// <summary>Gets or sets how often a running eval run beats, beside the beat each finished item gives; a worker fails a
+    /// run quiet for <see cref="AiEvalWorkerOptions.OrphanAfter"/> as orphaned, so keep this well below it.</summary>
+    public TimeSpan EvalHeartbeatInterval { get; set; } = TimeSpan.FromSeconds(15);
 }

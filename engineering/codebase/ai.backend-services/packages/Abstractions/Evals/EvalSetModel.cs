@@ -22,4 +22,8 @@ public sealed record EvalSetModel
 
     /// <summary>Gets when the set was created (UTC).</summary>
     public DateTimeOffset CreatedAtUtc { get; init; }
+
+    /// <summary>Gets the data scope the set belongs to, such as <c>tenant:{id}</c>; none for the unscoped bucket. Its runs
+    /// and their calls take it; a put never moves a set to another scope.</summary>
+    public string? Scope { get; init; }
 }

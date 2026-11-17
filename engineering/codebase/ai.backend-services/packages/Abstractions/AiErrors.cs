@@ -49,6 +49,11 @@ public static class AiErrors
     /// <param name="subject">The subject reference.</param>
     public static AppError SubjectNotResolved(string subject) => AppErrorFactory.NotFound($"No subject source resolves '{subject}'.");
 
+    /// <summary>Creates the error for a put that would move a set to another data scope; it never names the set's own.</summary>
+    /// <param name="set">The eval set key.</param>
+    public static AppError EvalSetScopeConflict(string set) =>
+        AppErrorFactory.Conflict($"Eval set '{set}' exists in another data scope; a set keeps the scope it was created in.");
+
     /// <summary>Creates a validation error.</summary>
     /// <param name="message">What is wrong.</param>
     public static AppError Invalid(string message) => AppErrorFactory.Validation(message);

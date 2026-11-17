@@ -92,6 +92,7 @@ internal sealed class InferenceEntity
     public string? FinishReason { get; set; }
     public string? Output { get; set; }
     public Guid? EvalRunId { get; set; }
+    public string Scope { get; set; } = string.Empty;
 }
 
 /// <summary>Maps a row of <c>ai_eval_sets</c>.</summary>
@@ -103,6 +104,29 @@ internal sealed class EvalSetEntity
     public string[] SevereMisses { get; set; } = [];
     public string? Note { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
+    public string Scope { get; set; } = string.Empty;
+}
+
+/// <summary>Maps a row of <c>ai_eval_batches</c>: what one matrix's cells share, pinned when it was queued.</summary>
+internal sealed class EvalBatchEntity
+{
+    public Guid Id { get; set; }
+    public string SetKey { get; set; } = string.Empty;
+    public string Scope { get; set; } = string.Empty;
+    public string[] ScoreFields { get; set; } = [];
+    public string[] SevereMisses { get; set; } = [];
+    public DateTimeOffset CreatedAt { get; set; }
+}
+
+/// <summary>Maps a row of <c>ai_eval_batch_items</c>: one pinned item of a batch, with the expected answer and input hash
+/// it was queued with.</summary>
+internal sealed class EvalBatchItemEntity
+{
+    public Guid BatchId { get; set; }
+    public Guid ItemId { get; set; }
+    public int Position { get; set; }
+    public string Expected { get; set; } = "{}";
+    public string InputHash { get; set; } = string.Empty;
 }
 
 /// <summary>Maps a row of <c>ai_eval_items</c>; a removed item keeps its row for the runs that scored it.</summary>
@@ -119,7 +143,8 @@ internal sealed class EvalItemEntity
     public DateTimeOffset? RemovedAt { get; set; }
 }
 
-/// <summary>Maps a row of <c>ai_eval_runs</c>: one cell of the matrix.</summary>
+/// <summary>Maps a row of <c>ai_eval_runs</c>: one cell of the matrix, with its place in the queue, how it sampled and the
+/// prompt it pinned.</summary>
 internal sealed class EvalRunEntity
 {
     public Guid Id { get; set; }
@@ -132,6 +157,26 @@ internal sealed class EvalRunEntity
     public DateTimeOffset StartedAt { get; set; }
     public DateTimeOffset? FinishedAt { get; set; }
     public string? Note { get; set; }
+    public string Status { get; set; } = string.Empty;
+    public int ItemsTotal { get; set; }
+    public int ItemsDone { get; set; }
+    public string? Error { get; set; }
+    public Guid? BatchId { get; set; }
+    public string? RequestedBy { get; set; }
+    public DateTimeOffset? HeartbeatAt { get; set; }
+    public bool Fresh { get; set; }
+    public int Parallelism { get; set; } = 1;
+    public int? SampleCount { get; set; }
+    public int? SampleSeed { get; set; }
+    public string[] SampleTags { get; set; } = [];
+    public Guid[] SampleItemIds { get; set; } = [];
+    public string Scope { get; set; } = string.Empty;
+    public Guid? PromptId { get; set; }
+    public string? PromptModelMatch { get; set; }
+    public string? PromptSystem { get; set; }
+    public string? PromptUser { get; set; }
+    public string? PromptParameters { get; set; }
+    public string? OutputSchema { get; set; }
 }
 
 /// <summary>Maps a row of <c>ai_eval_scores</c>: one item in one run.</summary>
@@ -151,6 +196,7 @@ internal sealed class EvalScoreEntity
     public short? Rating { get; set; }
     public string? Comment { get; set; }
     public string? RatedBy { get; set; }
+    public string? Expected { get; set; }
 }
 
 /// <summary>Maps a row of the <c>ai_eval_report_rows</c> view: one item in one run, joined with its run, item and inference.</summary>

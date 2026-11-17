@@ -7,7 +7,8 @@ using WoW.Two.Sdk.Beta.Be.Foundation.Results;
 
 namespace WoW.Two.Sdk.Beta.Be.Ai.Module.Inferences;
 
-/// <summary>Integrates the inference log in process: reads, per-model totals and a subject's purge.</summary>
+/// <summary>Integrates the inference log in process: reads, per-model totals and a subject's purge, each within the data
+/// scopes it names.</summary>
 /// <param name="db">The module's store.</param>
 internal sealed class ModuleInferencesBroker(AiDbContext db) : IInferencesBroker
 {
@@ -28,6 +29,8 @@ internal sealed class ModuleInferencesBroker(AiDbContext db) : IInferencesBroker
             rows = rows.Where(entity => entity.Subject == query.Subject);
         if (query.EvalRunId is { } run)
             rows = rows.Where(entity => entity.EvalRunId == run);
+        if (AiScopes.Filter(query.Scopes) is { } scopes)
+            rows = rows.Where(entity => scopes.Contains(entity.Scope));
         if (query.FromUtc is { } from)
         {
             var start = from.ToUniversalTime();
@@ -45,16 +48,24 @@ internal sealed class ModuleInferencesBroker(AiDbContext db) : IInferencesBroker
     }
 
     /// <inheritdoc />
-    public async Task<Result<IReadOnlyList<InferenceTotals>>> TotalsAsync(DateTimeOffset fromUtc, DateTimeOffset toUtc, CancellationToken cancellationToken = default)
+    public Task<Result<IReadOnlyList<InferenceTotals>>> TotalsAsync(DateTimeOffset fromUtc, DateTimeOffset toUtc, CancellationToken cancellationToken = default) =>
+        TotalsAsync(new InferenceTotalsQuery { FromUtc = fromUtc, ToUtc = toUtc }, cancellationToken);
+
+    /// <inheritdoc />
+    public async Task<Result<IReadOnlyList<InferenceTotals>>> TotalsAsync(InferenceTotalsQuery query, CancellationToken cancellationToken = default)
     {
-        if (toUtc <= fromUtc)
+        ArgumentNullException.ThrowIfNull(query);
+        if (query.ToUtc <= query.FromUtc)
             return Result<IReadOnlyList<InferenceTotals>>.Fail(AiErrors.Invalid("The period's end must come after its start."));
 
-        var start = fromUtc.ToUniversalTime();
-        var end = toUtc.ToUniversalTime();
+        var start = query.FromUtc.ToUniversalTime();
+        var end = query.ToUtc.ToUniversalTime();
         var succeeded = AiLabels.Outcome(AiOutcome.Succeeded);
-        var totals = await db.Inferences.AsNoTracking()
-            .Where(entity => entity.At >= start && entity.At < end)
+        var rows = db.Inferences.AsNoTracking().Where(entity => entity.At >= start && entity.At < end);
+        if (AiScopes.Filter(query.Scopes) is { } scopes)
+            rows = rows.Where(entity => scopes.Contains(entity.Scope));
+
+        var totals = await rows
             .GroupBy(entity => new { entity.UseCase, entity.Provider, entity.Model })
             .Select(group => new InferenceTotals
             {
@@ -73,13 +84,20 @@ internal sealed class ModuleInferencesBroker(AiDbContext db) : IInferencesBroker
     }
 
     /// <inheritdoc />
-    public async Task<Result<int>> ForgetSubjectAsync(string subject, CancellationToken cancellationToken = default)
+    public Task<Result<int>> ForgetSubjectAsync(string subject, CancellationToken cancellationToken = default) =>
+        ForgetSubjectAsync(subject, scopes: null, cancellationToken);
+
+    /// <inheritdoc />
+    public async Task<Result<int>> ForgetSubjectAsync(string subject, IReadOnlyList<string>? scopes, CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(subject))
             return Result<int>.Fail(AiErrors.Invalid("A subject is required."));
 
-        var cleared = await db.Inferences
-            .Where(entity => entity.Subject == subject && entity.Output != null)
+        var rows = db.Inferences.Where(entity => entity.Subject == subject && entity.Output != null);
+        if (AiScopes.Filter(scopes) is { } kept)
+            rows = rows.Where(entity => kept.Contains(entity.Scope));
+
+        var cleared = await rows
             .ExecuteUpdateAsync(setters => setters.SetProperty(entity => entity.Output, (string?)null), cancellationToken);
         return Result<int>.Ok(cleared);
     }

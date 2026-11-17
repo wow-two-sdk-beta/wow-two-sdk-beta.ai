@@ -37,12 +37,13 @@
 ### `codebase/ai.backend-services/`
 | Project | What it is |
 |---|---|
-| `packages/Abstractions` | the contract: `IAiRunner`, `IPromptsBroker`, `IModelPricesBroker`, `IInferencesBroker`, `IEvalsBroker`, `IEvalSubjectSource`, models, constants, errors |
-| `packages/Providers` | named model providers (Anthropic, OpenAI-compatible, Ollama) from `Ai:Providers`, `IAiModelCaller`, `IAiChatClients`, `AddAiProviders()` |
-| `packages/Module` | Form 1: the brokers and the runner in process, `AddAi()`, the named PostgreSQL set `ai` of embedded SQL migrations (tables, report view, seeded prices) |
-| `packages/Client` | Forms 2/3: `AddAiClient()`; the HTTP brokers land with the API |
-| `packages/Testing` | `ScriptedAiModelCaller` and `PromptsBrokerConformance` |
-| `service/Ai.Api` | the deployable host: the module, the `ai …` operator verbs (the eval bench), status, the console |
+| `packages/Abstractions` | the contract: `IAiRunner`, `IPromptsBroker`, `IModelPricesBroker`, `IInferencesBroker`, `IEvalsBroker`, `IEvalSubjectSource`, models, constants, routes, scopes, errors |
+| `packages/Providers` | named model providers (Anthropic, OpenAI-compatible, Ollama) from `Ai:Providers`, `IAiModelCaller`, `IAiChatClients`, `IAiProviderCatalog`, `AddAiProviders()` |
+| `packages/Module` | Form 1: the brokers and the runner in process, `AddAi()`, the eval queue and `AddAiEvalWorker()`, the named PostgreSQL set `ai` of embedded SQL migrations (tables, report view, seeded prices, queue, pins, scopes) |
+| `packages/Hosting` | the HTTP API any host mounts: `AddAiApi()` (scope policies, `IAiScopeAccess`), `MapAiApi()` (routes under `api/ai/`), report formats |
+| `packages/Client` | Forms 2/3: `AddAiClient()` and the five HTTP brokers over the API |
+| `packages/Testing` | `ScriptedAiModelCaller`, `PromptsBrokerConformance` and `EvalsBrokerConformance` |
+| `service/Ai.Api` | the deployable host: the module, the API with Identity's token check, the eval worker, the `ai …` operator verbs (the eval bench), status, the console |
 | `tests/Ai.Tests.{Unit,Providers,Integration,E2E,Conformance,Migrations}` | the test tiers |
 
 ### `codebase/ai.frontend-services/`

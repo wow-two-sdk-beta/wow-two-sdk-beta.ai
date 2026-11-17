@@ -20,4 +20,17 @@ public static class AiConstants
 
     /// <summary>Micro-USD in one US dollar; every cost in the contract is an integer count of micro-USD.</summary>
     public const long MicroUsdPerUsd = 1_000_000;
+
+    /// <summary>The seed an eval run's sample is ranked by when the request names none, so reruns compare the same items.</summary>
+    public const int DefaultSampleSeed = 0;
+
+    /// <summary>The longest name of whoever requested an eval run.</summary>
+    public const int MaxRequestedByLength = 256;
+
+    /// <summary>The longest data scope, such as <c>tenant:{id}</c>.</summary>
+    public const int MaxScopeLength = 128;
+
+    /// <summary>The data scope of calls, sets and runs made without one: the single bucket of a single-tenant host. A filter
+    /// names it to keep only those rows; a model reads it back as no scope.</summary>
+    public const string Unscoped = "";
 }

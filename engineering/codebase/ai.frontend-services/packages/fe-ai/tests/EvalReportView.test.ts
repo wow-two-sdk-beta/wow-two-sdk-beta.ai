@@ -17,6 +17,9 @@ const report: EvalReportModel = {
         provider: 'anthropic',
         model: 'haiku',
         startedAtUtc: '2026-11-13T00:00:00+00:00',
+        status: 'succeeded',
+        itemsTotal: 2,
+        itemsDone: 2,
       },
       items: 2,
       answered: 2,
@@ -27,6 +30,8 @@ const report: EvalReportModel = {
       failed: 0,
       fromCache: 0,
       costMicroUsd: 8200,
+      spentMicroUsd: 8200,
+      unpriced: 0,
       costPerItemMicroUsd: 4100,
       inputTokens: 100,
       outputTokens: 20,
@@ -50,8 +55,9 @@ const report: EvalReportModel = {
       misses: [],
       costMicroUsd: 4100,
       latencyMs: 850,
-      outcome: 'Succeeded',
+      outcome: 'succeeded',
       rating: 5,
+      priced: true,
     },
     {
       runId: 'r1',
@@ -64,7 +70,8 @@ const report: EvalReportModel = {
       misses: ['category'],
       costMicroUsd: 4100,
       latencyMs: 1500,
-      outcome: 'SchemaInvalid',
+      outcome: 'schemaInvalid',
+      priced: true,
     },
   ],
 };
@@ -78,6 +85,7 @@ describe('eval report view', () => {
     const text = rows[0]?.text() ?? '';
     expect(text).toContain('v3');
     expect(text).toContain('anthropic/haiku');
+    expect(text).toContain('succeeded');
     expect(text).toContain('50.0%');
     expect(text).toContain('$0.0041');
     expect(text).toContain('$0.0082');
@@ -90,7 +98,7 @@ describe('eval report view', () => {
     const rows = wrapper.findAll('table[aria-label="Items"] tbody tr');
     expect(rows).toHaveLength(2);
     expect(rows[0]?.text()).toContain('politics');
-    expect(rows[0]?.text()).toContain('Succeeded');
+    expect(rows[0]?.text()).toContain('succeeded');
   });
 
   it('shows a dash for a missing answer', () => {

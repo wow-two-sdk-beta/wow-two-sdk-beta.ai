@@ -7,4 +7,6 @@ export interface EvalSetModel {
   readonly note?: string | null;
   /** ISO 8601 timestamp. */
   readonly createdAtUtc: string;
+  /** The data scope, such as `tenant:{id}`; absent for the unscoped bucket. Its runs take it. */
+  readonly scope?: string | null;
 }

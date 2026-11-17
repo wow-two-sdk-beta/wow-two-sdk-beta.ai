@@ -1,13 +1,13 @@
-/** Mirrors `AiErrorKind` of the be contract; serialized as its name. */
+/** Mirrors `AiErrorKind` of the be contract; on the wire as its camelCase name. */
 export type AiErrorKind =
-  | 'Unknown'
-  | 'Network'
-  | 'Timeout'
-  | 'RateLimited'
-  | 'Unauthorized'
-  | 'Unavailable'
-  | 'BadRequest'
-  | 'ContentFiltered'
-  | 'InvalidResponse'
-  | 'SchemaMismatch'
-  | 'NotConfigured';
+  | 'unknown'
+  | 'network'
+  | 'timeout'
+  | 'rateLimited'
+  | 'unauthorized'
+  | 'unavailable'
+  | 'badRequest'
+  | 'contentFiltered'
+  | 'invalidResponse'
+  | 'schemaMismatch'
+  | 'notConfigured';

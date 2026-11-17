@@ -22,6 +22,8 @@ internal sealed class AiDbContext(DbContextOptions<AiDbContext> options) : AppDb
     public DbSet<EvalSetEntity> EvalSets => Set<EvalSetEntity>();
     public DbSet<EvalItemEntity> EvalItems => Set<EvalItemEntity>();
     public DbSet<EvalRunEntity> EvalRuns => Set<EvalRunEntity>();
+    public DbSet<EvalBatchEntity> EvalBatches => Set<EvalBatchEntity>();
+    public DbSet<EvalBatchItemEntity> EvalBatchItems => Set<EvalBatchItemEntity>();
     public DbSet<EvalScoreEntity> EvalScores => Set<EvalScoreEntity>();
     public DbSet<EvalReportRow> EvalReportRows => Set<EvalReportRow>();
 
@@ -79,12 +81,29 @@ internal sealed class AiDbContext(DbContextOptions<AiDbContext> options) : AppDb
         inference.Property(row => row.Outcome).HasMaxLength(16);
         inference.Property(row => row.ErrorKind).HasMaxLength(32);
         inference.Property(row => row.FinishReason).HasMaxLength(64);
+        inference.Property(row => row.Scope).HasMaxLength(AiConstants.MaxScopeLength);
 
         var set = modelBuilder.Entity<EvalSetEntity>();
         set.ToTable("ai_eval_sets");
         set.HasKey(row => row.Key);
         set.Property(row => row.Key).HasMaxLength(AiConstants.MaxKeyLength);
         set.Property(row => row.UseCase).HasMaxLength(AiConstants.MaxKeyLength);
+        set.Property(row => row.Scope).HasMaxLength(AiConstants.MaxScopeLength);
+
+        var batch = modelBuilder.Entity<EvalBatchEntity>();
+        batch.ToTable("ai_eval_batches");
+        batch.HasKey(row => row.Id);
+        batch.Property(row => row.SetKey).HasMaxLength(AiConstants.MaxKeyLength);
+        batch.Property(row => row.Scope).HasMaxLength(AiConstants.MaxScopeLength);
+
+        var batchItem = modelBuilder.Entity<EvalBatchItemEntity>();
+        batchItem.ToTable("ai_eval_batch_items");
+        batchItem.HasKey(row => new { row.BatchId, row.ItemId });
+        batchItem.Property(row => row.Expected).HasColumnType("jsonb");
+        batchItem.Property(row => row.InputHash).HasMaxLength(64);
+
+        // The keys the migrations declare, so one save writes a batch before its items and runs.
+        batchItem.HasOne<EvalBatchEntity>().WithMany().HasForeignKey(row => row.BatchId);
 
         var item = modelBuilder.Entity<EvalItemEntity>();
         item.ToTable("ai_eval_items");
@@ -103,6 +122,13 @@ internal sealed class AiDbContext(DbContextOptions<AiDbContext> options) : AppDb
         run.Property(row => row.PromptHash).HasMaxLength(12);
         run.Property(row => row.Provider).HasMaxLength(64);
         run.Property(row => row.Model).HasMaxLength(AiConstants.MaxModelRefLength);
+        run.Property(row => row.Status).HasMaxLength(16);
+        run.Property(row => row.RequestedBy).HasMaxLength(AiConstants.MaxRequestedByLength);
+        run.Property(row => row.Scope).HasMaxLength(AiConstants.MaxScopeLength);
+        run.Property(row => row.PromptModelMatch).HasMaxLength(AiConstants.MaxModelRefLength);
+        run.Property(row => row.PromptParameters).HasColumnType("jsonb");
+        run.Property(row => row.OutputSchema).HasColumnType("jsonb");
+        run.HasOne<EvalBatchEntity>().WithMany().HasForeignKey(row => row.BatchId);
 
         var score = modelBuilder.Entity<EvalScoreEntity>();
         score.ToTable("ai_eval_scores");
@@ -110,6 +136,7 @@ internal sealed class AiDbContext(DbContextOptions<AiDbContext> options) : AppDb
         score.Property(row => row.Outcome).HasMaxLength(16);
         score.Property(row => row.Answer).HasColumnType("jsonb");
         score.Property(row => row.RatedBy).HasMaxLength(256);
+        score.Property(row => row.Expected).HasColumnType("jsonb");
 
         var report = modelBuilder.Entity<EvalReportRow>();
         report.ToView("ai_eval_report_rows");

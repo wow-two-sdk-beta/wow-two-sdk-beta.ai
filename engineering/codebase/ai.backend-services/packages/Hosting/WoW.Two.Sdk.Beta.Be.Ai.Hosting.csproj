@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    The Ai HTTP API any host mounts: AddAiApi() registers its access policies (one per ai.* scope) and the data-scope
+    seam (IAiScopeAccess); MapAiApi() maps the routes under api/ai/ over the contract's brokers the host registered —
+    the module in process, or any other implementation. It adds no authentication scheme: the host brings its own
+    (Identity's tokens, a test scheme), and the policies read the principal's scope claims.
+  -->
+  <PropertyGroup>
+    <Description>Ai HTTP API: the routes under api/ai/ over the contract's brokers, with ai.* scope policies and per-caller data scopes, for any host to mount.</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <PackageReference Include="WoW2.Sdk.Beta.Be" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Abstractions\WoW.Two.Sdk.Beta.Be.Ai.Abstractions.csproj" />
+    <ProjectReference Include="..\Providers\WoW.Two.Sdk.Beta.Be.Ai.Providers.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Ai.Tests.Unit" />
+  </ItemGroup>
+
+</Project>

@@ -12,7 +12,12 @@ export interface EvalRunSummary {
   readonly schemaInvalid: number;
   readonly failed: number;
   readonly fromCache: number;
+  /** The run's cost, cached answers included at their original cost. */
   readonly costMicroUsd: number;
+  /** The new spend: answers this run called for, cached ones left out. */
+  readonly spentMicroUsd: number;
+  /** Items whose model had no price, so their cost reads 0 without being free. */
+  readonly unpriced: number;
   readonly costPerItemMicroUsd: number;
   readonly inputTokens: number;
   readonly outputTokens: number;

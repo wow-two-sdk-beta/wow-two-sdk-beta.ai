@@ -1,3 +1,4 @@
+using WoW.Two.Sdk.Beta.Be.Ai.Hosting;
 using WoW.Two.Sdk.Beta.Be.Data;
 using WoW.Two.Sdk.Beta.Be.Meta;
 
@@ -24,6 +25,8 @@ public static partial class HostConfiguration
 
         return builder
             .AddAiModule()
+            .AddAiWorker()
+            .AddAiAccess()
             .AddControllers();
     }
 
@@ -35,9 +38,15 @@ public static partial class HostConfiguration
         // verifies the levels, since the deploy's migrate step (dotnet Ai.Api.dll migrate) applied them before it.
         await app.Services.MigrateBespokeOnStartupAsync(app.Lifetime.ApplicationStopping);
 
-        // SDK pipeline: secure headers, compression, the SPA bundle, /health (database readiness) and the SPA fallback.
-        app.UseApiDefaults();
+        // SDK pipeline: secure headers, compression, the SPA bundle, the token check and the scope policies after routing,
+        // /health (database readiness) and the SPA fallback; then the status controller and the AI API under api/ai/.
+        app.UseApiDefaults(pipeline =>
+        {
+            pipeline.UseAuthentication();
+            pipeline.UseAuthorization();
+        });
         app.MapControllers();
+        app.MapAiApi();
 
         return app;
     }

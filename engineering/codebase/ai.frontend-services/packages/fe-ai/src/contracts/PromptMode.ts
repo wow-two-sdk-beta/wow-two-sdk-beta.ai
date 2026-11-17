@@ -1,2 +1,2 @@
-/** Mirrors `PromptMode` of the be contract; serialized as its name. */
-export type PromptMode = 'Rewrite' | 'Versioned';
+/** Mirrors `PromptMode` of the be contract; on the wire as its camelCase name. */
+export type PromptMode = 'rewrite' | 'versioned';

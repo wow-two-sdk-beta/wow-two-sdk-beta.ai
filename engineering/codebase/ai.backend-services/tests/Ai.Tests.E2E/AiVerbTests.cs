@@ -47,6 +47,11 @@ public sealed class AiVerbTests : IAsyncLifetime
     [InlineData("eval", "run", "--set", "x", "--model")]
     [InlineData("eval", "report", "--set", "x", "--format", "pdf")]
     [InlineData("eval", "rate", "--run", "not-a-guid", "--item", "x", "--rating", "5")]
+    [InlineData("eval", "queue", "--set", "x")]
+    [InlineData("eval", "queue", "--set", "x", "--model", "anthropic/claude-haiku-5-5", "--items", "not-a-guid")]
+    [InlineData("eval", "status", "--run", "not-a-guid")]
+    [InlineData("eval", "status", "--status", "paused")]
+    [InlineData("providers", "--live", "--extra", "x")]
     public async Task Verbs_ShouldRefuseBadArguments_WithAUsageLine(params string[] args)
     {
         var (exit, line) = await RunAsync(args);
@@ -92,9 +97,9 @@ public sealed class AiVerbTests : IAsyncLifetime
 
         var markdown = await RunTextAsync("eval", "report", "--set", "afisha-2", "--format", "md");
         markdown.Exit.Should().Be(AiOperatorWire.Done);
-        markdown.Text.Should().Contain("| Run | Model | Prompt | Items | Accuracy |").And.Contain("anthropic/claude-haiku-5-5").And.Contain("failed");
+        markdown.Text.Should().Contain("| Run | Status | Model | Prompt | Items | Accuracy |").And.Contain("anthropic/claude-haiku-5-5").And.Contain("failed");
         var csv = await RunTextAsync("eval", "report", "--set", "afisha-2", "--format", "csv");
-        csv.Text.Split('\n', StringSplitOptions.RemoveEmptyEntries).Should().HaveCount(3).And.Subject.First().Should().StartWith("run_id,provider,model");
+        csv.Text.Split('\n', StringSplitOptions.RemoveEmptyEntries).Should().HaveCount(3).And.Subject.First().Should().StartWith("run_id,status,provider,model,prompt_version,prompt_hash");
     }
 
     /// <summary>The bench with scripted providers: a single run, the prompt list and labels, prices, the matrix across
@@ -155,6 +160,38 @@ public sealed class AiVerbTests : IAsyncLifetime
         imported.GetProperty("items").GetInt32().Should().Be(1);
         Data(await RunAsync(caller, "eval", "items", "--set", "afisha-2")).EnumerateArray().Single()
             .GetProperty("input").GetProperty("title").GetString().Should().Be("Tashkent Fashion Week");
+    }
+
+    /// <summary>The queue from the bench: a matrix pinned to one sample, its status by run, batch and set, a cancel, a
+    /// sampled run now, and the provider catalog with its priced models.</summary>
+    [Fact]
+    public async Task Queue_ShouldPinASample_ShowItsStatus_AndCancel()
+    {
+        await SetUpAsync();
+        await File.WriteAllTextAsync(Path.Combine(folder, "post-2.json"), """{"title":"Craft fair"}""");
+        Data(await RunAsync("eval", "add", "--set", "afisha-2", "--input-file", Path.Combine(folder, "post-2.json"), "--expected", """{"relevance":"far"}""",
+            "--tags", "lang:ru"));
+
+        var batch = Data(await RunAsync("eval", "queue", "--set", "afisha-2", "--model", "anthropic/claude-haiku-5-5,openai/gpt-6-luna",
+            "--count", "1", "--seed", "4", "--by", "claude", "--note", "queued"));
+
+        batch.GetProperty("itemIds").GetArrayLength().Should().Be(1);
+        var runs = batch.GetProperty("runs").EnumerateArray().ToList();
+        runs.Should().HaveCount(2).And.OnlyContain(run => run.GetProperty("status").GetString() == "queued" && run.GetProperty("requestedBy").GetString() == "claude");
+        var runId = runs[0].GetProperty("id").GetString()!;
+        Data(await RunAsync("eval", "status", "--run", runId)).GetProperty("status").GetString().Should().Be("queued");
+        Data(await RunAsync("eval", "status", "--batch", batch.GetProperty("id").GetString()!)).GetArrayLength().Should().Be(2);
+        Data(await RunAsync("eval", "cancel", "--run", runId)).GetProperty("status").GetString().Should().Be("canceled");
+        Data(await RunAsync("eval", "status", "--set", "afisha-2", "--status", "canceled")).EnumerateArray().Should().ContainSingle()
+            .Which.GetProperty("id").GetString().Should().Be(runId);
+
+        var (exit, sampled) = await RunAsync("eval", "run", "--set", "afisha-2", "--model", "anthropic/claude-haiku-5-5", "--tags", "lang:ru");
+        exit.Should().Be(AiOperatorWire.Done, sampled.ToString());
+        sampled.GetProperty("data").GetProperty("runs").EnumerateArray().Single().GetProperty("items").GetInt32().Should().Be(1, "only the lang:ru item");
+
+        var providers = Data(await RunAsync("providers"));
+        providers.EnumerateArray().Single(provider => provider.GetProperty("name").GetString() == "openai")
+            .GetProperty("pricedModels").EnumerateArray().Select(model => model.GetString()).Should().Contain("gpt-6-luna");
     }
 
     [Fact]

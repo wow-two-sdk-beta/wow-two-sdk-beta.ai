@@ -11,8 +11,8 @@ namespace WoW.Two.Sdk.Beta.Be.Ai.Providers;
 /// <summary>Registers the named model providers.</summary>
 public static class AiProvidersServiceCollectionExtensions
 {
-    /// <summary>Registers <see cref="IAiModelCaller"/> and <see cref="IAiChatClients"/> (singletons) over the providers
-    /// bound from <see cref="AiProvidersOptions.SectionName"/>.</summary>
+    /// <summary>Registers <see cref="IAiModelCaller"/>, <see cref="IAiChatClients"/> and <see cref="IAiProviderCatalog"/>
+    /// (singletons) over the providers bound from <see cref="AiProvidersOptions.SectionName"/>.</summary>
     /// <remarks>
     ///   - every child of the section is one provider, named by its key: <c>Kind</c>, <c>BaseUrl</c>, <c>ApiKey</c>,
     ///     <c>TimeoutSeconds</c> (<see cref="AiProviderOptions"/>)
@@ -35,7 +35,13 @@ public static class AiProvidersServiceCollectionExtensions
             builder.Configure(configure);
 
         services.TryAddSingleton(TimeProvider.System);
-        services.TryAddSingleton<IAiInnerChatClientFactory>(_ => new AiInnerChatClientFactory());
+        // One factory builds the SDK clients for chats and model listings alike.
+        services.TryAddSingleton(_ => new AiInnerChatClientFactory());
+        services.TryAddSingleton<IAiInnerChatClientFactory>(provider => provider.GetRequiredService<AiInnerChatClientFactory>());
+        services.TryAddSingleton<IAiModelLister>(provider => provider.GetRequiredService<AiInnerChatClientFactory>());
+        services.TryAddSingleton<IAiProviderCatalog>(provider => new AiProviderCatalog(
+            provider.GetRequiredService<IOptions<AiProvidersOptions>>(),
+            provider.GetRequiredService<IAiModelLister>()));
         services.TryAddSingleton<IAiChatClients>(provider => new AiChatClients(
             provider.GetRequiredService<IOptions<AiProvidersOptions>>(),
             provider.GetRequiredService<IAiInnerChatClientFactory>(),

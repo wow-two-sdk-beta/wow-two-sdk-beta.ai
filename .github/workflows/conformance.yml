@@ -1,7 +1,7 @@
-# The contract's conformance suite against the released image: pulls the image, applies its migrate step to a
-# throwaway PostgreSQL, starts it, and runs the Client side of Ai.Tests.Conformance against it (CONFORMANCE_BASE_URL). Runs after each
-# image publish on main, nightly and on dispatch. It cannot block a publish; the descriptor's verify dev check is the
-# promotion gate.
+# The contract's conformance suites against the released image: pulls the image, applies its migrate step to a
+# throwaway PostgreSQL, starts it, and runs the Client side of Ai.Tests.Conformance (PromptsBrokerConformance and
+# EvalsBrokerConformance through the HTTP brokers) against it (CONFORMANCE_BASE_URL). Runs after each image publish on
+# main, nightly and on dispatch. It cannot block a publish; the descriptor's verify dev check is the promotion gate.
 name: conformance
 
 on:
@@ -48,7 +48,8 @@ jobs:
           password: ${{ github.token }}
 
       # The image's own migrate step first, as a deploy runs it; Development mode then skips the HTTPS redirect a
-      # production host applies behind its ingress.
+      # production host applies behind its ingress, and lets the suite call without an Identity token
+      # (Ai__Api__AllowAnonymousInDevelopment). The worker stays off, so a queued run waits for the suite's cancel.
       - name: Start the released image
         run: |
           set -euo pipefail
@@ -63,7 +64,8 @@ jobs:
           done
           docker run --rm --network conformance --env DB_CONNECTION="$connection" "$image" migrate
           docker run --detach --name ai --network conformance --publish 127.0.0.1:8080:8080 \
-            --env ASPNETCORE_ENVIRONMENT=Development --env DB_CONNECTION="$connection" "$image"
+            --env ASPNETCORE_ENVIRONMENT=Development --env DB_CONNECTION="$connection" \
+            --env Ai__Api__AllowAnonymousInDevelopment=true --env Ai__Worker__Enabled=false "$image"
           for _ in $(seq 1 30); do
             curl --fail --silent http://127.0.0.1:8080/health >/dev/null && exit 0
             sleep 2
@@ -71,12 +73,16 @@ jobs:
           echo "::error::$image never reported healthy"
           exit 1
 
-      # The Client package has no HTTP broker yet (backlog: HTTP API and Client brokers), so the image is checked
-      # through its status endpoint and an operator verb over the migrated database; the client conformance suite
-      # returns here when the brokers land.
-      - name: Check the image's status and verbs
+      - name: Run the client conformance suites against the image
+        working-directory: engineering/codebase/ai.backend-services
+        env:
+          CONFORMANCE_BASE_URL: http://127.0.0.1:8080/
+        run: >-
+          dotnet test tests/Ai.Tests.Conformance -p:BuildSpa=false
+          --filter "FullyQualifiedName~Ai.Tests.Conformance.Client"
+
+      - name: Check the image's operator verbs
         run: |
-          curl --fail --silent --show-error http://127.0.0.1:8080/api/system/status
           docker run --rm --network conformance --env DB_CONNECTION="Host=database;Database=ai;Username=ai;Password=ai" \
             "ghcr.io/${GITHUB_REPOSITORY,,}/ai:$TAG" ai usecase list
 

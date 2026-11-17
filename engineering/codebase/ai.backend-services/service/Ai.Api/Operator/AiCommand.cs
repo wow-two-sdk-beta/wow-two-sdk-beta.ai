@@ -3,6 +3,7 @@ using Ai.Api.Configurations;
 using Microsoft.Extensions.Options;
 using Npgsql;
 using WoW.Two.Sdk.Beta.Be.Ai.Evals;
+using WoW.Two.Sdk.Beta.Be.Ai.Hosting.Reports;
 using WoW.Two.Sdk.Beta.Be.Ai.Inferences;
 using WoW.Two.Sdk.Beta.Be.Ai.Module;
 using WoW.Two.Sdk.Beta.Be.Ai.Prices;
@@ -103,6 +104,7 @@ public static class AiCommand
         {
             "usecase put" => PutUseCaseAsync(ct),
             "usecase list" => ReplyAsync(Prompts.ListUseCasesAsync(ct)),
+            "providers" => ProvidersAsync(ct),
             "prompt save" => SavePromptAsync(ct),
             "prompt list" => ListPromptsAsync(ct),
             "label move" => MoveLabelAsync(ct),
@@ -118,6 +120,9 @@ public static class AiCommand
             "eval remove" => RemoveAsync(ct),
             "eval items" => ReplyAsync(Evals.ListItemsAsync(args.Value("set")!, ct)),
             "eval run" => RunEvalAsync(ct),
+            "eval queue" => QueueEvalAsync(ct),
+            "eval status" => StatusAsync(ct),
+            "eval cancel" => CancelAsync(ct),
             "eval runs" => ReplyAsync(Evals.ListRunsAsync(args.Value("set")!, ct)),
             "eval report" => ReportAsync(ct),
             "eval rate" => RateAsync(ct),
@@ -331,19 +336,20 @@ public static class AiCommand
                 : await ReplyAsync(Task.FromResult(removed));
         }
 
-        /// <summary>Runs the matrix: every model × every version, one run each, then prints their summaries.</summary>
+        /// <summary>Prints every provider: configured or named by a price, its priced models, and with <c>--live</c> the
+        /// model ids it serves now; never a key.</summary>
+        private async Task<int> ProvidersAsync(CancellationToken ct) =>
+            await AiOperatorWire.OkAsync(output, Command,
+                await AiProviderOverview.BuildAsync(services.GetService<IAiProviderCatalog>(), Prices, args.Flag("live"), ct));
+
+        /// <summary>Runs the matrix now: every model × every version, one run each with the same sample, then prints their
+        /// summaries.</summary>
         private async Task<int> RunEvalAsync(CancellationToken ct)
         {
-            if (!args.TryInt("parallel", out var parallel))
-                return await Usage("'--parallel' is a number");
-
-            var versions = new List<int?>();
-            foreach (var text in args.List("version"))
-            {
-                if (!int.TryParse(text, out var version))
-                    return await Usage("'--version' is a number or a comma list of numbers");
-                versions.Add(version);
-            }
+            if (!args.TryInt("parallel", out var parallel) || !args.TryInt("count", out var count) || !args.TryInt("seed", out var seed))
+                return await Usage("'--parallel', '--count' and '--seed' are numbers");
+            if (!TryVersions(out var versions) || !TryItems(out var items))
+                return await Usage("'--version' is a comma list of numbers and '--items' a comma list of ids");
 
             if (versions.Count == 0)
                 versions.Add(null);
@@ -364,6 +370,11 @@ public static class AiCommand
                         Fresh = args.Flag("fresh"),
                         Parallelism = parallel ?? 1,
                         Note = args.Value("note"),
+                        Count = count,
+                        Seed = seed,
+                        Tags = args.List("tags"),
+                        ItemIds = items,
+                        RequestedBy = args.Value("by"),
                     }, ct);
                     if (result is Result<EvalRunModel>.Success { Value: var run })
                         runs.Add(run.Id);
@@ -380,6 +391,83 @@ public static class AiCommand
             return refused.Count == 0
                 ? await AiOperatorWire.OkAsync(output, Command, data)
                 : await AiOperatorWire.ErrorAsync(output, Command, "refused", $"{refused.Count} of {refused.Count + runs.Count} runs could not start.", AiOperatorWire.Refused, data);
+        }
+
+        /// <summary>Queues the matrix for a worker: one batch pins the sample and scoring, each cell its prompt; prints the
+        /// batch with its run ids.</summary>
+        private async Task<int> QueueEvalAsync(CancellationToken ct)
+        {
+            if (!args.TryInt("parallel", out var parallel) || !args.TryInt("count", out var count) || !args.TryInt("seed", out var seed))
+                return await Usage("'--parallel', '--count' and '--seed' are numbers");
+            if (!TryVersions(out var versions) || !TryItems(out var items))
+                return await Usage("'--version' is a comma list of numbers and '--items' a comma list of ids");
+
+            return await ReplyAsync(Evals.QueueAsync(new EvalMatrixRequest
+            {
+                Set = args.Value("set")!,
+                Models = args.List("model"),
+                Versions = [.. versions.OfType<int>()],
+                Labels = args.List("label"),
+                Fresh = args.Flag("fresh"),
+                Parallelism = parallel ?? 1,
+                Note = args.Value("note"),
+                Count = count,
+                Seed = seed,
+                Tags = args.List("tags"),
+                ItemIds = items,
+                RequestedBy = args.Value("by"),
+            }, ct));
+        }
+
+        /// <summary>Prints one run (<c>--run</c>), or the runs a filter keeps, newest first.</summary>
+        private async Task<int> StatusAsync(CancellationToken ct)
+        {
+            if (!args.TryGuid("run", out var run) || !args.TryGuid("batch", out var batch) || !args.TryInt("limit", out var limit))
+                return await Usage("'--run' and '--batch' are ids, '--limit' a number");
+
+            EvalRunStatus? status = null;
+            if (args.Value("status") is { } text)
+            {
+                if (!Enum.TryParse<EvalRunStatus>(text, ignoreCase: true, out var parsed) || !Enum.IsDefined(parsed))
+                    return await Usage("'--status' is queued, running, succeeded, failed or canceled");
+                status = parsed;
+            }
+
+            return run is { } id
+                ? await ReplyAsync(Evals.GetRunAsync(id, ct))
+                : await ReplyAsync(Evals.ListRunsAsync(new EvalRunQuery { Set = args.Value("set"), BatchId = batch, Status = status, Limit = limit ?? 20 }, ct));
+        }
+
+        /// <summary>Cancels a queued or running run; a running one stops between items.</summary>
+        private async Task<int> CancelAsync(CancellationToken ct) =>
+            args.TryGuid("run", out var run)
+                ? await ReplyAsync(Evals.CancelRunAsync(run!.Value, ct))
+                : await Usage("'--run' is an id");
+
+        private bool TryVersions(out List<int?> versions)
+        {
+            versions = [];
+            foreach (var text in args.List("version"))
+            {
+                if (!int.TryParse(text, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out var version))
+                    return false;
+                versions.Add(version);
+            }
+
+            return true;
+        }
+
+        private bool TryItems(out List<Guid> items)
+        {
+            items = [];
+            foreach (var text in args.List("items"))
+            {
+                if (!Guid.TryParse(text, out var id))
+                    return false;
+                items.Add(id);
+            }
+
+            return true;
         }
 
         private async Task<int> ReportAsync(CancellationToken ct)

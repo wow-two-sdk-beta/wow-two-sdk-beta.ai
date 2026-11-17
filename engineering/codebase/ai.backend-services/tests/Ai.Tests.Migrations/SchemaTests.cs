@@ -36,6 +36,8 @@ public sealed class SchemaTests(MigratorPostgresFixture fixture) : IAsyncLifetim
     [InlineData("ai_eval_items")]
     [InlineData("ai_eval_runs")]
     [InlineData("ai_eval_scores")]
+    [InlineData("ai_eval_batches")]
+    [InlineData("ai_eval_batch_items")]
     public async Task Apply_ShouldCreateEveryTable_InTheModulesSchema(string table)
     {
         await using var migrator = MigrationTests.CreateMigrator(fixture);

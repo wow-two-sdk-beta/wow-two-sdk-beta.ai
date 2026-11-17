@@ -15,6 +15,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\packages\Module\WoW.Two.Sdk.Beta.Be.Ai.Module.csproj" />
     <ProjectReference Include="..\..\packages\Client\WoW.Two.Sdk.Beta.Be.Ai.Client.csproj" />
+    <ProjectReference Include="..\..\packages\Hosting\WoW.Two.Sdk.Beta.Be.Ai.Hosting.csproj" />
   </ItemGroup>
 
   <ItemGroup>

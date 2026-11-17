@@ -1,2 +1,2 @@
-/** Mirrors `AiOutcome` of the be contract; serialized as its name. */
-export type AiOutcome = 'Succeeded' | 'Failed' | 'Refused' | 'SchemaInvalid';
+/** Mirrors `AiOutcome` of the be contract; on the wire as its camelCase name. */
+export type AiOutcome = 'succeeded' | 'failed' | 'refused' | 'schemaInvalid';

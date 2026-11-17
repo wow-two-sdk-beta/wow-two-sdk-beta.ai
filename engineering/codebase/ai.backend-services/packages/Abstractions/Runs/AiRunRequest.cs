@@ -26,4 +26,8 @@ public sealed record AiRunRequest
 
     /// <summary>Gets the eval run the call belongs to, when an eval runs it.</summary>
     public Guid? EvalRunId { get; init; }
+
+    /// <summary>Gets the data scope the call belongs to, such as <c>tenant:{id}</c>; none for the unscoped bucket. Recorded
+    /// on every attempt; a stored answer is reused only within the same scope. Use cases and prompts stay shared.</summary>
+    public string? Scope { get; init; }
 }

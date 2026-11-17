@@ -45,9 +45,15 @@ services:
     # settings.required. The service needs the target's PostgreSQL database: Wheelhouse fills the connection string in
     # the target's settings file (/app/appsettings.Target.json) from it, and the name ends in ConnectionString, so the
     # value stays in its vault.
+    # The API under /api/ai checks Identity's tokens: Ai:Auth:Authority is the issuer, Ai:Auth:Audience this service's
+    # resource URI; with no authority every route there answers 401. Ai:Worker:Enabled false keeps an instance from
+    # running queued evals.
     settings:
       keys:
         DatabaseSettings:ConnectionString: { required: true }
+        Ai:Auth:Authority: { type: url }
+        Ai:Auth:Audience: { type: url }
+        Ai:Worker:Enabled: { type: boolean, default: true }
     needs: [postgres]
     # The pages at /, the contract's HTTP mirror under the same host's /api: /api routes ahead of /, never /apiary.
     sites:

@@ -4,9 +4,11 @@ using System.Text.Json;
 using WoW.Two.Sdk.Beta.Be.Ai;
 using WoW.Two.Sdk.Beta.Be.Ai.Evals;
 
-namespace Ai.Api.Operator;
+namespace WoW.Two.Sdk.Beta.Be.Ai.Hosting.Reports;
 
-/// <summary>Writes an eval report as a Markdown table for chat or as CSV for a spreadsheet.</summary>
+/// <summary>Writes an eval report as a Markdown table for chat or as CSV for a spreadsheet; both name each run's status
+/// and pinned prompt hash, keep new spend apart from cached cost, and mark unpriced items, so a cost of 0 never reads as
+/// free.</summary>
 public static class EvalReportFormats
 {
     /// <summary>Writes the report as Markdown: one row per run (prompt version × model with accuracy, misses, cost and
@@ -18,14 +20,14 @@ public static class EvalReportFormats
         var text = new StringBuilder();
         text.AppendLine(CultureInfo.InvariantCulture, $"### Eval `{report.Set}` · use case `{report.UseCase}`");
         text.AppendLine();
-        text.AppendLine("| Run | Model | Prompt | Items | Accuracy | Severe | Schema-invalid | Failed | Cached | Cost/item | Cost | p50 ms | p95 ms | Tokens in/out | Rating |");
-        text.AppendLine("|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|");
+        text.AppendLine("| Run | Status | Model | Prompt | Items | Accuracy | Severe | Schema-invalid | Failed | Cached | Unpriced | Cost/item | Cost | Spent | p50 ms | p95 ms | Tokens in/out | Rating |");
+        text.AppendLine("|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|");
         foreach (var run in report.Runs)
         {
             text.AppendLine(CultureInfo.InvariantCulture,
-                $"| `{Short(run.Run.Id)}` | {run.Run.Provider}/{run.Run.Model} | v{run.Run.PromptVersion} `{run.Run.PromptHash}` | {run.Items} | " +
-                $"{run.Accuracy:P1} | {run.SevereMisses} | {run.SchemaInvalid} | {run.Failed} | {run.FromCache} | {Usd(run.CostPerItemMicroUsd)} | " +
-                $"{Usd(run.CostMicroUsd)} | {run.P50LatencyMs} | {run.P95LatencyMs} | {run.InputTokens}/{run.OutputTokens} | " +
+                $"| `{Short(run.Run.Id)}` | {Word(run.Run.Status.ToString())} | {run.Run.Provider}/{run.Run.Model} | v{run.Run.PromptVersion} `{run.Run.PromptHash}` | {run.Items} | " +
+                $"{run.Accuracy:P1} | {run.SevereMisses} | {run.SchemaInvalid} | {run.Failed} | {run.FromCache} | {run.Unpriced} | {Usd(run.CostPerItemMicroUsd)} | " +
+                $"{Usd(run.CostMicroUsd)} | {Usd(run.SpentMicroUsd)} | {run.P50LatencyMs} | {run.P95LatencyMs} | {run.InputTokens}/{run.OutputTokens} | " +
                 $"{(run.MeanRating is { } rating ? rating.ToString("0.##", CultureInfo.InvariantCulture) : "–")} |");
         }
 
@@ -55,16 +57,16 @@ public static class EvalReportFormats
         ArgumentNullException.ThrowIfNull(report);
         var runs = report.Runs.ToDictionary(run => run.Run.Id);
         var text = new StringBuilder();
-        text.AppendLine("run_id,provider,model,prompt_version,prompt_hash,item_id,subject,tags,outcome,correct,severe,misses,cost_micro_usd,latency_ms,from_cache,rating,comment,expected,answer");
+        text.AppendLine("run_id,status,provider,model,prompt_version,prompt_hash,item_id,subject,tags,outcome,correct,severe,misses,cost_micro_usd,priced,latency_ms,from_cache,rating,comment,expected,answer");
         foreach (var item in report.Items)
         {
             var run = runs[item.RunId].Run;
             text.AppendLine(string.Join(',', new[]
             {
-                item.RunId.ToString(), run.Provider, run.Model, run.PromptVersion.ToString(CultureInfo.InvariantCulture), run.PromptHash,
-                item.ItemId.ToString(), item.Subject ?? string.Empty, string.Join(';', item.Tags),
-                JsonNamingPolicy.CamelCase.ConvertName(item.Outcome.ToString()), Bool(item.Correct), Bool(item.Severe), string.Join("; ", item.Misses),
-                item.CostMicroUsd.ToString(CultureInfo.InvariantCulture), item.LatencyMs.ToString(CultureInfo.InvariantCulture), Bool(item.FromCache),
+                item.RunId.ToString(), Word(run.Status.ToString()), run.Provider, run.Model, run.PromptVersion.ToString(CultureInfo.InvariantCulture),
+                item.PromptHash ?? run.PromptHash, item.ItemId.ToString(), item.Subject ?? string.Empty, string.Join(';', item.Tags),
+                Word(item.Outcome.ToString()), Bool(item.Correct), Bool(item.Severe), string.Join("; ", item.Misses),
+                item.CostMicroUsd.ToString(CultureInfo.InvariantCulture), Bool(item.Priced), item.LatencyMs.ToString(CultureInfo.InvariantCulture), Bool(item.FromCache),
                 item.Rating?.ToString(CultureInfo.InvariantCulture) ?? string.Empty, item.Comment ?? string.Empty, item.Expected, item.Answer ?? string.Empty,
             }.Select(Field)));
         }
@@ -78,6 +80,8 @@ public static class EvalReportFormats
         "$" + ((decimal)microUsd / AiConstants.MicroUsdPerUsd).ToString("0.######", CultureInfo.InvariantCulture);
 
     private static string Short(Guid id) => id.ToString("N")[^8..];
+
+    private static string Word(string member) => JsonNamingPolicy.CamelCase.ConvertName(member);
 
     private static string Bool(bool value) => value ? "true" : "false";
 

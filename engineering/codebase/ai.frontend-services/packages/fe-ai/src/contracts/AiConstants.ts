@@ -12,4 +12,12 @@ export const AiConstants = {
   candidateLabel: 'candidate',
   /** Micro-USD in one US dollar; every cost in the contract is an integer count of micro-USD. */
   microUsdPerUsd: 1_000_000,
+  /** The seed an eval run's sample is ranked by when the request names none. */
+  defaultSampleSeed: 0,
+  /** The longest name of whoever requested an eval run. */
+  maxRequestedByLength: 256,
+  /** The longest data scope, such as `tenant:{id}`. */
+  maxScopeLength: 128,
+  /** The data scope of calls, sets and runs made without one; a filter names it to keep only those. */
+  unscoped: '',
 } as const;

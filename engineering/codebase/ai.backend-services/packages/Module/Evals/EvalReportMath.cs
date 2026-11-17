@@ -35,6 +35,8 @@ internal static class EvalReportMath
             Failed = items.Count(item => item.Outcome is AiOutcome.Failed or AiOutcome.Refused),
             FromCache = items.Count(item => item.FromCache),
             CostMicroUsd = cost,
+            SpentMicroUsd = items.Where(item => !item.FromCache).Sum(item => item.CostMicroUsd),
+            Unpriced = items.Count(item => item.InferenceId is not null && !item.Priced),
             CostPerItemMicroUsd = count == 0 ? 0 : (long)Math.Round((double)cost / count, MidpointRounding.AwayFromZero),
             InputTokens = tokens.Input,
             OutputTokens = tokens.Output,

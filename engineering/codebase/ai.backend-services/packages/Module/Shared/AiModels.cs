@@ -90,6 +90,7 @@ internal static class AiModels
         FinishReason = row.FinishReason,
         Output = row.Output,
         EvalRunId = row.EvalRunId,
+        Scope = AiScopes.Read(row.Scope),
     };
 
     /// <summary>Maps an eval set row.</summary>
@@ -101,6 +102,7 @@ internal static class AiModels
         SevereMisses = row.SevereMisses,
         Note = row.Note,
         CreatedAtUtc = row.CreatedAt,
+        Scope = AiScopes.Read(row.Scope),
     };
 
     /// <summary>Maps an eval item row.</summary>
@@ -128,6 +130,36 @@ internal static class AiModels
         StartedAtUtc = row.StartedAt,
         FinishedAtUtc = row.FinishedAt,
         Note = row.Note,
+        Status = AiLabels.Read<EvalRunStatus>(row.Status),
+        ItemsTotal = row.ItemsTotal,
+        ItemsDone = row.ItemsDone,
+        Error = row.Error,
+        BatchId = row.BatchId,
+        RequestedBy = row.RequestedBy,
+        HeartbeatAtUtc = row.HeartbeatAt,
+        Sample = row.SampleCount is null && row.SampleSeed is null && row.SampleTags.Length == 0 && row.SampleItemIds.Length == 0
+            ? null
+            : new EvalSampleModel { Count = row.SampleCount, Seed = row.SampleSeed, Tags = row.SampleTags, ItemIds = row.SampleItemIds },
+        Scope = AiScopes.Read(row.Scope),
+        PromptId = row.PromptId,
+    };
+
+    /// <summary>Maps a batch row with its pinned items and its runs.</summary>
+    /// <param name="row">The batch row.</param>
+    /// <param name="itemIds">Its items, in run order.</param>
+    /// <param name="runs">Its runs, in matrix order.</param>
+    public static EvalBatchModel ToModel(EvalBatchEntity row, IReadOnlyList<Guid> itemIds, IReadOnlyList<EvalRunEntity> runs) => new()
+    {
+        Id = row.Id,
+        Set = row.SetKey,
+        Scope = AiScopes.Read(row.Scope),
+        ItemIds = itemIds,
+        ScoreFields = row.ScoreFields,
+        SevereMisses = row.SevereMisses,
+        Sample = runs.Count == 0 ? null : ToModel(runs[0]).Sample,
+        RequestedBy = runs.Count == 0 ? null : runs[0].RequestedBy,
+        CreatedAtUtc = row.CreatedAt,
+        Runs = [.. runs.Select(ToModel)],
     };
 
     /// <summary>Maps a report row to an item result.</summary>
@@ -151,5 +183,7 @@ internal static class AiModels
         FromCache = row.FromCache,
         Rating = row.Rating,
         Comment = row.Comment,
+        PromptHash = row.PromptHash,
+        Priced = row.Priced,
     };
 }
