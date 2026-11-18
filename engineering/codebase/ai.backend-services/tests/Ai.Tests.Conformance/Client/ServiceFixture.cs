@@ -45,6 +45,9 @@ public sealed class ServiceFixture : IAsyncLifetime
                     ["Ai:Worker:Enabled"] = "false",
                     ["Ai:Module:RetryDelay"] = "00:00:00",
                     ["Logging:LogLevel:Default"] = "Warning",
+                    // Development loads the developer's user-secrets; blank keys keep the suite off real providers.
+                    ["Ai:Providers:anthropic:ApiKey"] = "",
+                    ["Ai:Providers:openai:ApiKey"] = "",
                 }),
             };
             var server = host.Server;

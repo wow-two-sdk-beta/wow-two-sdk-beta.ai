@@ -65,6 +65,10 @@ public sealed class AiApiFixture : MultiHostFixture, IAsyncLifetime
                 ["Ai:Module:RetryDelay"] = "00:00:00",
                 ["Ai:Module:ImageFetchHosts:0"] = "localhost",
                 ["Ai:Worker:PollInterval"] = "00:00:00.100",
+                // The host runs as Development, which loads the developer's user-secrets; blank keys keep the tests
+                // independent of a key set on the machine for the local eval bench.
+                ["Ai:Providers:anthropic:ApiKey"] = "",
+                ["Ai:Providers:openai:ApiKey"] = "",
             }),
             ConfigureServicesHook = services =>
             {
