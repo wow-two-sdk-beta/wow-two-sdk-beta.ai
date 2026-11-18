@@ -26,9 +26,9 @@ internal static class Callers
         return new AiModelCaller(options, new AiChatClients(options, new FakeInnerChatClientFactory(client)), time ?? new FakeTimeProvider());
     }
 
-    public static AiModelCaller Wire(StubHandler handler, AiProvidersOptions? providers = null)
+    public static AiModelCaller Wire(StubHandler handler, AiProvidersOptions? providers = null, TimeProvider? time = null)
     {
         var options = Options.Create(providers ?? Providers());
-        return new AiModelCaller(options, new AiChatClients(options, new AiInnerChatClientFactory(() => handler)), TimeProvider.System);
+        return new AiModelCaller(options, new AiChatClients(options, new AiInnerChatClientFactory(() => handler)), time ?? TimeProvider.System);
     }
 }

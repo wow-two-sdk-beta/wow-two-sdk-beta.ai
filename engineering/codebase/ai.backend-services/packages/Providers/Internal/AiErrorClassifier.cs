@@ -1,4 +1,5 @@
 using System.ClientModel;
+using System.Net;
 using System.Net.Sockets;
 using System.Text;
 using System.Text.Json;
@@ -56,6 +57,24 @@ internal static class AiErrorClassifier
         OperationCanceledException => "The call exceeded the provider's timeout.",
         _ => exception.Message,
     };
+
+    /// <summary>Tells whether Anthropic refused <c>thinking: {"type":"disabled"}</c> with a 400 that names the
+    /// <c>between_tools</c> type to send instead; models that always think answer so (Sonnet 5.5, 2026-11-18). Any other
+    /// 400 is a different failure.</summary>
+    /// <param name="exception">The failure the SDK threw, or one that wraps it.</param>
+    internal static bool IsThinkingDisabledRefused(Exception exception)
+    {
+        for (var current = exception; current is not null; current = current.InnerException)
+        {
+            if (current is AnthropicApiException { StatusCode: HttpStatusCode.BadRequest } api
+                && api.ResponseBody.Contains(BetweenToolsType, StringComparison.Ordinal))
+                return true;
+        }
+        return false;
+    }
+
+    /// <summary>The <c>thinking.type</c> that turns thinking off on a model that always thinks.</summary>
+    internal const string BetweenToolsType = "between_tools";
 
     /// <summary>Removes the key, folds whitespace and trims the message to <see cref="MaxErrorLength"/> characters.</summary>
     /// <param name="message">The raw message.</param>

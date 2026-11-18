@@ -2,6 +2,7 @@ using System.Net;
 using System.Text.Json.Nodes;
 using AwesomeAssertions;
 using Ai.Tests.Providers.Support;
+using Microsoft.Extensions.Time.Testing;
 using WoW.Two.Sdk.Beta.Be.Ai.Providers;
 using WoW.Two.Sdk.Beta.Be.Ai.Runs;
 
@@ -63,6 +64,170 @@ public sealed class AiProviderWireTests
         var body = JsonNode.Parse(handler.LastBody!)!;
         body["thinking"]!["type"]!.GetValue<string>().Should().Be(thinking);
         body["output_config"]?["effort"]?.GetValue<string>().Should().Be(outputEffort);
+    }
+
+    /// <summary>What Sonnet 5.5 answered on 2026-11-18 to <c>thinking: disabled</c>: a model that always thinks.</summary>
+    private const string BetweenToolsRefusal = """
+        {"type":"error","error":{"type":"invalid_request_error","message":"To turn thinking off on this model, send \"thinking\": {\"type\": \"between_tools\"} instead of {\"type\": \"disabled\"}. The model does not think before responding."}}
+        """;
+
+    private const string OtherBadRequest = """{"type":"error","error":{"type":"invalid_request_error","message":"max_tokens: too large"}}""";
+
+    private static string ThinkingTypeOf(string body) => JsonNode.Parse(body)!["thinking"]?["type"]?.GetValue<string>() ?? "absent";
+
+    /// <summary>Plays models that always think: <paramref name="alwaysThinks"/> refuse <c>disabled</c> with the 400 above,
+    /// any other model (Haiku-like) takes whatever it is sent. <paramref name="onRequest"/> sees each request's thinking type.</summary>
+    private static StubHandler Models(Func<string, bool> alwaysThinks, Action<string>? onRequest = null) => new(HttpStatusCode.OK, "")
+    {
+        Respond = body =>
+        {
+            var type = ThinkingTypeOf(body);
+            onRequest?.Invoke(type);
+            return type == "disabled" && alwaysThinks(JsonNode.Parse(body)!["model"]!.GetValue<string>())
+                ? (HttpStatusCode.BadRequest, BetweenToolsRefusal)
+                : (HttpStatusCode.OK, AnthropicAnswer);
+        },
+    };
+
+    private static AiCallRequest ThinkingOff(string model) => Request("anthropic", model) with { Effort = "none" };
+
+    [Fact]
+    public async Task Anthropic_ShouldSendThinkingDisabledInOneRequest_WhenTheModelTakesIt()
+    {
+        var handler = Models(_ => false);
+
+        var result = await Callers.Wire(handler).CallAsync(ThinkingOff("claude-haiku-5-5"));
+
+        handler.Calls.Should().Be(1);
+        ThinkingTypeOf(handler.Bodies[0]).Should().Be("disabled");
+        result.Succeeded.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task Anthropic_ShouldRetryWithBetweenToolsOnce_WhenTheModelRefusesDisabled_AndSendItFirstAfterwards()
+    {
+        var time = new FakeTimeProvider();
+        var handler = new StubHandler(HttpStatusCode.OK, "")
+        {
+            Respond = body =>
+            {
+                var refused = ThinkingTypeOf(body) == "disabled";
+                time.Advance(TimeSpan.FromMilliseconds(refused ? 40 : 60));
+                return refused ? (HttpStatusCode.BadRequest, BetweenToolsRefusal) : (HttpStatusCode.OK, AnthropicAnswer);
+            },
+        };
+        var caller = Callers.Wire(handler, time: time);
+        var request = ThinkingOff("claude-sonnet-5-5") with { JsonSchema = Schema };
+
+        var first = await caller.CallAsync(request);
+
+        handler.Calls.Should().Be(2);
+        handler.Bodies.Select(ThinkingTypeOf).Should().Equal("disabled", "between_tools");
+        var retry = JsonNode.Parse(handler.Bodies[1])!;
+        retry["thinking"]!.AsObject().Count.Should().Be(1, "between_tools takes no other field");
+        retry["model"]!.GetValue<string>().Should().Be("claude-sonnet-5-5");
+        retry["max_tokens"]!.GetValue<int>().Should().Be(256);
+        retry["system"]![0]!["cache_control"]!["type"]!.GetValue<string>().Should().Be("ephemeral");
+        retry["output_config"]!["format"]!["type"]!.GetValue<string>().Should().Be("json_schema");
+        first.Should().Match<AiCallResult>(r => r.Succeeded && r.Text == "{\"label\":\"food\"}" && r.InputTokens == 510
+            && r.CacheReadTokens == 200 && r.CacheWriteTokens == 300 && r.OutputTokens == 5);
+        first.LatencyMs.Should().Be(100, "both attempts count: 40 ms refused plus 60 ms answered");
+
+        var second = await caller.CallAsync(request);
+
+        handler.Calls.Should().Be(3, "the model is remembered, so the second call needs one request");
+        ThinkingTypeOf(handler.Bodies[2]).Should().Be("between_tools");
+        second.Should().Match<AiCallResult>(r => r.Succeeded && r.LatencyMs == 60);
+    }
+
+    [Fact]
+    public async Task Anthropic_ShouldRememberBetweenToolsPerModel()
+    {
+        var handler = Models(model => model == "claude-sonnet-5-5");
+        var caller = Callers.Wire(handler);
+
+        await caller.CallAsync(ThinkingOff("claude-sonnet-5-5"));
+        await caller.CallAsync(ThinkingOff("claude-haiku-5-5"));
+
+        handler.Bodies.Select(ThinkingTypeOf).Should().Equal("disabled", "between_tools", "disabled");
+    }
+
+    [Theory]
+    [InlineData("low")]
+    [InlineData("medium")]
+    [InlineData("high")]
+    public async Task Anthropic_ShouldNeverSendBetweenTools_ForAnotherEffort(string effort)
+    {
+        // Even a model remembered as between_tools keeps the adaptive mapping; and the 400 that names between_tools is no
+        // reason to retry an attempt that never asked for thinking off.
+        var handler = Models(_ => true);
+        var caller = Callers.Wire(handler);
+        await caller.CallAsync(ThinkingOff("claude-sonnet-5-5"));
+        handler.Bodies.Clear();
+
+        await caller.CallAsync(Request("anthropic", "claude-sonnet-5-5") with { Effort = effort });
+
+        handler.Bodies.Should().ContainSingle();
+        var body = JsonNode.Parse(handler.Bodies[0])!;
+        body["thinking"]!["type"]!.GetValue<string>().Should().Be("adaptive");
+        body["output_config"]!["effort"]!.GetValue<string>().Should().Be(effort);
+    }
+
+    [Theory]
+    [InlineData("low")]
+    [InlineData("high")]
+    public async Task Anthropic_ShouldNotRetryAnotherEffort_ThatAnswersTheBetweenToolsRefusal(string effort)
+    {
+        var handler = new StubHandler(HttpStatusCode.BadRequest, BetweenToolsRefusal);
+
+        var result = await Callers.Wire(handler).CallAsync(Request("anthropic", "claude-sonnet-5-5") with { Effort = effort });
+
+        result.ErrorKind.Should().Be(AiErrorKind.BadRequest);
+        handler.Calls.Should().Be(1);
+        handler.Bodies.Select(ThinkingTypeOf).Should().NotContain("between_tools");
+    }
+
+    [Fact]
+    public async Task Anthropic_ShouldNotRetryADifferentBadRequest_AndShouldKeepSendingDisabled()
+    {
+        var handler = new StubHandler(HttpStatusCode.BadRequest, OtherBadRequest);
+        var caller = Callers.Wire(handler);
+
+        var result = await caller.CallAsync(ThinkingOff("claude-sonnet-5-5"));
+        await caller.CallAsync(ThinkingOff("claude-sonnet-5-5"));
+
+        result.ErrorKind.Should().Be(AiErrorKind.BadRequest);
+        result.Error.Should().Contain("max_tokens: too large");
+        handler.Bodies.Select(ThinkingTypeOf).Should().Equal("disabled", "disabled");
+    }
+
+    [Fact]
+    public async Task Anthropic_ShouldRetryOnlyOnce_AndRememberNothing_WhenBetweenToolsFailsToo()
+    {
+        var handler = new StubHandler(HttpStatusCode.OK, "")
+        {
+            Respond = body => ThinkingTypeOf(body) == "disabled"
+                ? (HttpStatusCode.BadRequest, BetweenToolsRefusal)
+                : ((HttpStatusCode)529, """{"type":"error","error":{"type":"overloaded_error","message":"Overloaded"}}"""),
+        };
+        var caller = Callers.Wire(handler);
+
+        var result = await caller.CallAsync(ThinkingOff("claude-sonnet-5-5"));
+        await caller.CallAsync(ThinkingOff("claude-sonnet-5-5"));
+
+        result.ErrorKind.Should().Be(AiErrorKind.Unavailable);
+        handler.Bodies.Select(ThinkingTypeOf).Should().Equal("disabled", "between_tools", "disabled", "between_tools");
+    }
+
+    [Fact]
+    public async Task OpenAi_ShouldNotRetry_WhenItsBadRequestNamesBetweenTools()
+    {
+        var handler = new StubHandler(HttpStatusCode.BadRequest, BetweenToolsRefusal);
+
+        var result = await Callers.Wire(handler).CallAsync(Request("groq", "openai/gpt-oss-20b") with { Effort = "none" });
+
+        result.ErrorKind.Should().Be(AiErrorKind.BadRequest);
+        handler.Calls.Should().Be(1);
     }
 
     [Theory]

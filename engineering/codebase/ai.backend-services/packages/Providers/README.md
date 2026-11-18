@@ -73,6 +73,10 @@ services.AddAiProviders(configuration).AddAiChatClient("ollama", "llama3.2");
   `format`); `Effort` `none|low|medium|high` as `ChatOptions.Reasoning` (Anthropic: `none` disables thinking, the rest
   turn on adaptive thinking at that effort; OpenAI: `reasoning_effort`; Ollama: `think`). Leave `Effort` empty for a
   model without reasoning. `CacheSystem` marks Anthropic's system block `cache_control: ephemeral`.
+- **Thinking off on Anthropic:** `none` sends `thinking: {"type":"disabled"}`. A model that always thinks (Sonnet 5.5)
+  answers 400 naming `between_tools`; the same attempt then goes again once with `{"type":"between_tools"}`, and the
+  caller sends that first for the model from then on. No other effort sends it. One call reports both attempts'
+  latency and the answering attempt's usage.
 - **Usage:** `InputTokens` holds every input token, cache reads and writes included, for every kind; `OutputTokens`
   includes reasoning. Ollama reports neither cache nor reasoning counts.
 - **Errors:** 401/403 `Unauthorized`, 408 and the provider timeout `Timeout`, 429 `RateLimited`, 5xx and Anthropic's

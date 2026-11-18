@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Text.Json;
 using Anthropic.Models.Messages;
 using Microsoft.Extensions.AI;
@@ -10,6 +11,9 @@ namespace WoW.Two.Sdk.Beta.Be.Ai.Providers.Internal;
 /// and latency either way.</summary>
 internal sealed class AiModelCaller(IOptions<AiProvidersOptions> options, IAiChatClients clients, TimeProvider time) : IAiModelCaller
 {
+    // Anthropic model ids that refused `thinking: disabled` and took `between_tools`; kept for the caller's life.
+    private readonly ConcurrentDictionary<string, byte> betweenToolsModels = new(StringComparer.Ordinal);
+
     /// <inheritdoc />
     public bool IsConfigured(string provider) => AiProviderResolution.Describe(options.Value, provider).Problem is null;
 
@@ -40,25 +44,45 @@ internal sealed class AiModelCaller(IOptions<AiProvidersOptions> options, IAiCha
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         timeout.CancelAfter(TimeSpan.FromSeconds(Math.Max(1, settings!.TimeoutSeconds)));
 
+        // Thinking off is `disabled` unless this model already refused it; only that effort ever takes `between_tools`.
+        var thinkingOff = kind == AiProviderKinds.Anthropic && chatOptions.Reasoning is { Effort: ReasoningEffort.None };
+        var betweenTools = thinkingOff && betweenToolsModels.ContainsKey(request.Model.Model);
+        if (betweenTools)
+            UseBetweenTools(chatOptions, request);
+
         ChatResponse response;
-        try
+        while (true)
         {
-            response = await client.GetResponseAsync(messages, chatOptions, timeout.Token).ConfigureAwait(false);
+            try
+            {
+                response = await client.GetResponseAsync(messages, chatOptions, timeout.Token).ConfigureAwait(false);
+                break;
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception exception) when (cancellationToken.IsCancellationRequested)
+            {
+                // An SDK that wraps the caller's cancellation in its own exception still cancels.
+                throw new OperationCanceledException("The caller cancelled the model call.", exception, cancellationToken);
+            }
+            catch (Exception exception) when (thinkingOff && !betweenTools && AiErrorClassifier.IsThinkingDisabledRefused(exception))
+            {
+                // A model that always thinks refuses `disabled` and names `between_tools`: the same attempt goes again, once.
+                betweenTools = true;
+                UseBetweenTools(chatOptions, request);
+            }
+            catch (Exception exception)
+            {
+                return Failed(AiErrorClassifier.Classify(exception),
+                    AiErrorClassifier.Sanitize(AiErrorClassifier.Describe(exception), settings.ApiKey));
+            }
         }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-        {
-            throw;
-        }
-        catch (Exception exception) when (cancellationToken.IsCancellationRequested)
-        {
-            // An SDK that wraps the caller's cancellation in its own exception still cancels.
-            throw new OperationCanceledException("The caller cancelled the model call.", exception, cancellationToken);
-        }
-        catch (Exception exception)
-        {
-            return Failed(AiErrorClassifier.Classify(exception),
-                AiErrorClassifier.Sanitize(AiErrorClassifier.Describe(exception), settings.ApiKey));
-        }
+
+        // The model took it: later calls send it first and skip the refused attempt.
+        if (betweenTools)
+            betweenToolsModels.TryAdd(request.Model.Model, 0);
 
         var finishReason = FinishReasonOf(response);
         var answered = AiUsageMapper.Apply(Result() with { FinishReason = finishReason }, response.Usage);
@@ -89,6 +113,22 @@ internal sealed class AiModelCaller(IOptions<AiProvidersOptions> options, IAiCha
 
         AiCallResult Failed(AiErrorKind errorKind, string error) => Result() with { ErrorKind = errorKind, Error = error };
     }
+
+    /// <summary>Turns thinking off with <c>thinking: {"type":"between_tools"}</c>, which models that always think take in
+    /// place of <c>disabled</c>. The Anthropic chat client maps effort <c>none</c> only to <c>disabled</c>, so the raw
+    /// request carries the thinking object (the client leaves a caller-set one untouched) with the model, the output
+    /// budget and an empty message list that the client fills; the schema, system block and images still come from the
+    /// options and messages.</summary>
+    /// <param name="chatOptions">The attempt's options.</param>
+    /// <param name="request">The attempt.</param>
+    internal static void UseBetweenTools(ChatOptions chatOptions, AiCallRequest request) =>
+        chatOptions.RawRepresentationFactory = _ => new MessageCreateParams
+        {
+            MaxTokens = request.MaxOutputTokens,
+            Messages = [],
+            Model = request.Model.Model,
+            Thinking = new ThinkingConfigBetweenTools(),
+        };
 
     /// <summary>Builds the messages and options of one attempt.</summary>
     /// <param name="request">The attempt.</param>
