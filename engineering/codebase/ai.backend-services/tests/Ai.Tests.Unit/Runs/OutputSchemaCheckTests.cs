@@ -38,6 +38,39 @@ public sealed class OutputSchemaCheckTests
         error.Should().Contain(reason);
     }
 
+    [Theory]
+    [InlineData("Here is the answer:\n```json\n{\"relevance\":\"far\",\"kind\":null}\n```\nHope it helps.")]
+    [InlineData("```json\n{\"relevance\":\"far\",\"kind\":null}\n```\nThe post is about a concert.")]
+    [InlineData("The post {mentions braces}. Answer: {\"relevance\":\"far\",\"kind\":null}")]
+    [InlineData("{\"relevance\":\"far\",\"kind\":null}\n\nNote: the date {is} unclear.")]
+    [InlineData("Answer:\n\n{\n  \"relevance\": \"far\",\n  \"kind\": null\n}")]
+    public void TryCheck_ShouldPass_AnObjectWrappedInProse(string answer)
+    {
+        OutputSchemaCheck.TryCheck(answer, Schema, out var json, out var error).Should().BeTrue(error);
+
+        using var parsed = System.Text.Json.JsonDocument.Parse(json);
+        parsed.RootElement.GetProperty("relevance").GetString().Should().Be("far");
+    }
+
+    [Theory]
+    [InlineData("Here it is: {\"relevance\":\"maybe\",\"kind\":\"x\"}", "not one of")]
+    [InlineData("I think it is far.", "not JSON")]
+    [InlineData("""[{"relevance":"close","kind":"x"}]""", "not an object")]
+    [InlineData("Answer: {\"relevance\":\"far\", \"kind\": ", "not JSON")]
+    public void TryCheck_ShouldStillFail_AProseAnswerThatMissesTheSchema(string answer, string reason)
+    {
+        OutputSchemaCheck.TryCheck(answer, Schema, out _, out var error).Should().BeFalse();
+
+        error.Should().Contain(reason);
+    }
+
+    [Fact]
+    public void ExtractJson_ShouldKeepAWholeAnswerThatParses()
+    {
+        OutputSchemaCheck.ExtractJson(" {\"a\":{\"b\":1}} ").Should().Be("{\"a\":{\"b\":1}}");
+        OutputSchemaCheck.ExtractJson("Answer: {\"a\":\"ünïcode {x}\"} done").Should().Be("{\"a\":\"ünïcode {x}\"}");
+    }
+
     [Fact]
     public void StripFence_ShouldKeepAnUnfencedAnswer()
     {

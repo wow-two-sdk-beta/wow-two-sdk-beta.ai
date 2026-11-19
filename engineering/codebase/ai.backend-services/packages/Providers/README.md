@@ -77,6 +77,16 @@ services.AddAiProviders(configuration).AddAiChatClient("ollama", "llama3.2");
   answers 400 naming `between_tools`; the same attempt then goes again once with `{"type":"between_tools"}`, and the
   caller sends that first for the model from then on. No other effort sends it. One call reports both attempts'
   latency and the answering attempt's usage.
+- **Schema refused as too complex:** Anthropic compiles a response schema into a grammar and refuses a large one with
+  a 400 before any token is billed ("The compiled grammar is too large", or the documented "Schema is too complex for
+  compilation"; its limits are 24 optional and 16 union-typed parameters per request, plus an internal grammar size).
+  The same attempt then goes again once without the schema format: the system message ends with "Answer with one JSON
+  object that matches this JSON schema:" and the schema, still cache-marked, and the response format becomes the
+  kind's JSON mode (OpenAI `json_object`, Ollama `"json"`) or none (Anthropic). The caller remembers the refusal per
+  `{provider}/{model}` and schema hash and sends the schema in the instructions first from then on, whatever the retry
+  answered; `AiCallResult.SchemaInInstructions` says so. Any other 400 fails as before. No OpenAI-compatible wording is
+  matched: neither the SDK nor the docs name one. The Ai module checks the answer exactly as it checks a structured
+  one, a fence or prose around the object stripped.
 - **Usage:** `InputTokens` holds every input token, cache reads and writes included, for every kind; `OutputTokens`
   includes reasoning. Ollama reports neither cache nor reasoning counts.
 - **Errors:** 401/403 `Unauthorized`, 408 and the provider timeout `Timeout`, 429 `RateLimited`, 5xx and Anthropic's

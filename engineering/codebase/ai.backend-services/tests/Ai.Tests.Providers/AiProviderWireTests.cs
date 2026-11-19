@@ -230,6 +230,178 @@ public sealed class AiProviderWireTests
         handler.Calls.Should().Be(1);
     }
 
+    /// <summary>What Haiku 5.5 and Sonnet 5.5 answered on 2026-11-19 to SCFD's extraction schemas as structured output.</summary>
+    private const string GrammarTooLarge = """
+        {"type":"error","error":{"type":"invalid_request_error","message":"The compiled grammar is too large, which would cause performance issues. Simplify your tool schemas or reduce the number of strict tools."}}
+        """;
+
+    private const string OtherSchema = """{"type":"object","properties":{"tag":{"type":"string"}},"required":["tag"]}""";
+
+    private static string FormatTypeOf(string body) => JsonNode.Parse(body)!["output_config"]?["format"]?["type"]?.GetValue<string>() ?? "absent";
+
+    private static string SystemTextOf(string body) => JsonNode.Parse(body)!["system"]![0]!["text"]!.GetValue<string>();
+
+    /// <summary>Plays Anthropic refusing every schema sent as structured output with the 400 above; <paramref name="other"/>
+    /// answers any other request.</summary>
+    private static StubHandler GrammarRefused(Func<(HttpStatusCode, string)>? other = null) => new(HttpStatusCode.OK, "")
+    {
+        Respond = body => FormatTypeOf(body) == "json_schema"
+            ? (HttpStatusCode.BadRequest, GrammarTooLarge)
+            : other?.Invoke() ?? (HttpStatusCode.OK, AnthropicAnswer),
+    };
+
+    [Fact]
+    public async Task Anthropic_ShouldRetryWithTheSchemaInTheInstructionsOnce_WhenTheGrammarIsTooLarge_AndSendItFirstAfterwards()
+    {
+        var time = new FakeTimeProvider();
+        var handler = new StubHandler(HttpStatusCode.OK, "")
+        {
+            Respond = body =>
+            {
+                var refused = FormatTypeOf(body) == "json_schema";
+                time.Advance(TimeSpan.FromMilliseconds(refused ? 40 : 60));
+                return refused ? (HttpStatusCode.BadRequest, GrammarTooLarge) : (HttpStatusCode.OK, AnthropicAnswer);
+            },
+        };
+        var caller = Callers.Wire(handler, time: time);
+        var request = Request("anthropic", "claude-haiku-5-5") with { JsonSchema = Schema, SchemaName = "sort-note" };
+
+        var first = await caller.CallAsync(request);
+
+        handler.Bodies.Select(FormatTypeOf).Should().Equal("json_schema", "absent");
+        var retry = JsonNode.Parse(handler.Bodies[1])!;
+        retry["output_config"]?["format"].Should().BeNull("Anthropic has no JSON mode, so the retry sends no format");
+        SystemTextOf(handler.Bodies[1]).Should().Be($"You sort notes.\n\nAnswer with one JSON object that matches this JSON schema:\n\n{Schema}");
+        retry["system"]!.AsArray().Count.Should().Be(1);
+        retry["system"]![0]!["cache_control"]!["type"]!.GetValue<string>().Should().Be("ephemeral");
+        retry["messages"]![0]!["content"]![0]!["text"]!.GetValue<string>().Should().Be("Sort: milk");
+        first.Should().Match<AiCallResult>(r => r.Succeeded && r.SchemaInInstructions && r.Text == "{\"label\":\"food\"}"
+            && r.InputTokens == 510 && r.OutputTokens == 5);
+        first.LatencyMs.Should().Be(100, "both attempts count: 40 ms refused plus 60 ms answered");
+
+        var second = await caller.CallAsync(request);
+
+        handler.Calls.Should().Be(3, "the refused schema is remembered, so the second call needs one request");
+        FormatTypeOf(handler.Bodies[2]).Should().Be("absent");
+        SystemTextOf(handler.Bodies[2]).Should().Be(SystemTextOf(handler.Bodies[1]));
+        second.Should().Match<AiCallResult>(r => r.Succeeded && r.SchemaInInstructions && r.LatencyMs == 60);
+    }
+
+    [Fact]
+    public async Task Anthropic_ShouldRememberTheRefusedSchemaPerModelAndSchema()
+    {
+        var handler = GrammarRefused();
+        var caller = Callers.Wire(handler);
+
+        await caller.CallAsync(Request("anthropic", "claude-haiku-5-5") with { JsonSchema = Schema });
+        await caller.CallAsync(Request("anthropic", "claude-sonnet-5-5") with { JsonSchema = Schema });
+        await caller.CallAsync(Request("anthropic", "claude-haiku-5-5") with { JsonSchema = OtherSchema });
+        await caller.CallAsync(Request("anthropic", "claude-haiku-5-5") with { JsonSchema = Schema });
+
+        handler.Bodies.Select(FormatTypeOf).Should().Equal(
+            "json_schema", "absent",
+            "json_schema", "absent",
+            "json_schema", "absent",
+            "absent");
+    }
+
+    [Fact]
+    public async Task Anthropic_ShouldNotRetryADifferentBadRequest_AndShouldKeepSendingTheSchema()
+    {
+        var handler = new StubHandler(HttpStatusCode.BadRequest, OtherBadRequest);
+        var caller = Callers.Wire(handler);
+        var request = Request("anthropic", "claude-haiku-5-5") with { JsonSchema = Schema };
+
+        var result = await caller.CallAsync(request);
+        await caller.CallAsync(request);
+
+        result.Should().Match<AiCallResult>(r => r.ErrorKind == AiErrorKind.BadRequest && !r.SchemaInInstructions);
+        result.Error.Should().Contain("max_tokens: too large");
+        handler.Bodies.Select(FormatTypeOf).Should().Equal("json_schema", "json_schema");
+    }
+
+    [Fact]
+    public async Task Anthropic_ShouldNotRetryTheGrammarRefusal_ForACallWithoutASchema()
+    {
+        var handler = new StubHandler(HttpStatusCode.BadRequest, GrammarTooLarge);
+
+        var result = await Callers.Wire(handler).CallAsync(Request("anthropic", "claude-haiku-5-5"));
+
+        result.ErrorKind.Should().Be(AiErrorKind.BadRequest);
+        handler.Calls.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task Anthropic_ShouldRetryOnlyOnce_AndStillRememberTheSchema_WhenTheInstructionsAttemptFails()
+    {
+        var handler = GrammarRefused(() => ((HttpStatusCode)529, """{"type":"error","error":{"type":"overloaded_error","message":"Overloaded"}}"""));
+        var caller = Callers.Wire(handler);
+        var request = Request("anthropic", "claude-haiku-5-5") with { JsonSchema = Schema };
+
+        var result = await caller.CallAsync(request);
+        var again = await caller.CallAsync(request);
+
+        result.Should().Match<AiCallResult>(r => r.ErrorKind == AiErrorKind.Unavailable && r.SchemaInInstructions);
+        again.ErrorKind.Should().Be(AiErrorKind.Unavailable);
+        handler.Bodies.Select(FormatTypeOf).Should().Equal("json_schema", "absent", "absent");
+    }
+
+    [Fact]
+    public async Task Anthropic_ShouldTakeBothRetries_WhenThinkingOffAndTheSchemaAreRefused()
+    {
+        var handler = new StubHandler(HttpStatusCode.OK, "")
+        {
+            Respond = body => ThinkingTypeOf(body) == "disabled" ? (HttpStatusCode.BadRequest, BetweenToolsRefusal)
+                : FormatTypeOf(body) == "json_schema" ? (HttpStatusCode.BadRequest, GrammarTooLarge)
+                : (HttpStatusCode.OK, AnthropicAnswer),
+        };
+        var caller = Callers.Wire(handler);
+        var request = ThinkingOff("claude-sonnet-5-5") with { JsonSchema = Schema };
+
+        var first = await caller.CallAsync(request);
+        await caller.CallAsync(request);
+
+        handler.Bodies.Select(body => $"{ThinkingTypeOf(body)} {FormatTypeOf(body)}").Should().Equal(
+            "disabled json_schema", "between_tools json_schema", "between_tools absent",
+            "between_tools absent");
+        first.Should().Match<AiCallResult>(r => r.Succeeded && r.SchemaInInstructions);
+    }
+
+    [Fact]
+    public async Task OpenAi_ShouldNotRetry_OnTheAnthropicGrammarWording()
+    {
+        var handler = new StubHandler(HttpStatusCode.BadRequest, GrammarTooLarge);
+
+        var result = await Callers.Wire(handler).CallAsync(Request("groq", "openai/gpt-oss-20b") with { JsonSchema = Schema });
+
+        result.ErrorKind.Should().Be(AiErrorKind.BadRequest);
+        handler.Calls.Should().Be(1);
+    }
+
+    [Theory]
+    [InlineData("groq", "openai", "openai/gpt-oss-20b")]
+    [InlineData("ollama", "ollama", "llama3.2")]
+    public async Task SchemaInInstructions_ShouldSendTheKindsJsonMode_WhereItHasOne(string provider, string kind, string model)
+    {
+        var handler = new StubHandler(HttpStatusCode.OK, kind == "openai" ? OpenAiAnswer : OllamaAnswer.ReplaceLineEndings(" "));
+        var providers = Callers.Providers();
+        using var factory = new WoW.Two.Sdk.Beta.Be.Ai.Providers.Internal.AiInnerChatClientFactory(() => handler);
+        var client = factory.Create(provider, kind, providers.Providers[provider], model);
+        var request = Request(provider, model) with { JsonSchema = Schema };
+        WoW.Two.Sdk.Beta.Be.Ai.Providers.Internal.AiModelCaller.TryBuild(request, kind, out var messages, out var options, out _).Should().BeTrue();
+
+        WoW.Two.Sdk.Beta.Be.Ai.Providers.Internal.AiModelCaller.UseSchemaInInstructions(messages, options, request, kind);
+        await client.GetResponseAsync(messages, options);
+
+        var body = JsonNode.Parse(handler.LastBody!)!;
+        if (kind == "openai")
+            body["response_format"]!["type"]!.GetValue<string>().Should().Be("json_object");
+        else
+            body["format"]!.GetValue<string>().Should().Be("json");
+        body["messages"]![0]!["role"]!.GetValue<string>().Should().Be("system");
+        body["messages"]![0]!["content"]!.GetValue<string>().Should().EndWith(Schema).And.StartWith("You sort notes.");
+    }
+
     [Theory]
     [InlineData(529, """{"type":"error","error":{"type":"overloaded_error","message":"Overloaded"}}""", AiErrorKind.Unavailable)]
     [InlineData(401, """{"type":"error","error":{"type":"authentication_error","message":"invalid x-api-key"}}""", AiErrorKind.Unauthorized)]

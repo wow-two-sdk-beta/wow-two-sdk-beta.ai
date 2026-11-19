@@ -5,7 +5,9 @@ Form 1 of the Ai capability, in the consumer's process over the consumer's Postg
 - `IAiRunner` — resolves a use case's prompt for each routed model, renders its `{{name}}` placeholders, answers from a
   stored inference when the same prompt, model and input ran before, else calls the model with retries on transient
   failures, checks the answer against the output schema, falls back along the route, and logs every attempt with its
-  tokens and cost.
+  tokens and cost. The check reads the JSON object out of a fence or surrounding prose, so an answer whose schema the
+  provider refused as structured output and took in its instructions instead (Providers § Behaviour) is checked the
+  same way; the span tag `ai.request.schema_mode` says which (`response_format` or `instructions`).
 - `IPromptsBroker` — use cases and their prompts in one table: rewrite mode updates a row in place, versioned mode
   inserts the next version and moves labels (`production`, `candidate`).
 - `IModelPricesBroker`, `IInferencesBroker` — prices with history, and the inference log with totals.

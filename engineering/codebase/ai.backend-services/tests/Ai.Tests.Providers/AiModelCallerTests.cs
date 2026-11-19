@@ -5,6 +5,7 @@ using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Time.Testing;
 using Ai.Tests.Providers.Support;
 using WoW.Two.Sdk.Beta.Be.Ai.Providers;
+using WoW.Two.Sdk.Beta.Be.Ai.Providers.Internal;
 using WoW.Two.Sdk.Beta.Be.Ai.Runs;
 
 namespace Ai.Tests.Providers;
@@ -101,6 +102,52 @@ public sealed class AiModelCallerTests
         client.Options.Reasoning.Should().BeNull();
         client.Options.ResponseFormat.Should().BeNull();
         client.Options.MaxOutputTokens.Should().Be(1024);
+    }
+
+    private const string LabelSchema = """{"type":"object","properties":{"label":{"type":"string"}},"required":["label"]}""";
+
+    [Theory]
+    [InlineData("anthropic", false)]
+    [InlineData("openai", true)]
+    [InlineData("ollama", true)]
+    public void UseSchemaInInstructions_ShouldDropTheSchemaFormat_ForTheKindsJsonModeOrNone(string kind, bool jsonMode)
+    {
+        var request = Request() with { JsonSchema = LabelSchema };
+        AiModelCaller.TryBuild(request, kind, out var messages, out var options, out _).Should().BeTrue();
+
+        AiModelCaller.UseSchemaInInstructions(messages, options, request, kind);
+
+        if (jsonMode)
+            options.ResponseFormat.Should().BeOfType<ChatResponseFormatJson>().Which.Schema.Should().BeNull();
+        else
+            options.ResponseFormat.Should().BeNull();
+        messages.Select(message => message.Role).Should().Equal(ChatRole.System, ChatRole.User);
+        messages[0].Text.Should().Be($"You sort notes.\n\n{AiModelCaller.SchemaInstructionsLead}\n\n{LabelSchema}");
+        var system = messages[0].Contents.Should().ContainSingle().Subject;
+        (system.AdditionalProperties?.ContainsKey("anthropic:cache_control") ?? false).Should().Be(kind == "anthropic");
+    }
+
+    [Fact]
+    public void UseSchemaInInstructions_ShouldAddASystemMessage_WhenThePromptHasNone()
+    {
+        var request = Request() with { System = "", JsonSchema = $"  {LabelSchema}\n" };
+        AiModelCaller.TryBuild(request, "anthropic", out var messages, out var options, out _).Should().BeTrue();
+
+        AiModelCaller.UseSchemaInInstructions(messages, options, request, "anthropic");
+
+        messages.Select(message => (message.Role, message.Text)).Should().Equal(
+            (ChatRole.System, $"{AiModelCaller.SchemaInstructionsLead}\n\n{LabelSchema}"), (ChatRole.User, "Sort: milk"));
+    }
+
+    [Fact]
+    public void SchemaKey_ShouldTellModelsAndSchemasApart()
+    {
+        var request = Request() with { JsonSchema = LabelSchema };
+
+        AiModelCaller.SchemaKey(request).Should().StartWith("anthropic/claude-haiku-5-5|")
+            .And.Be(AiModelCaller.SchemaKey(request with { User = "Sort: bread" }))
+            .And.NotBe(AiModelCaller.SchemaKey(request with { JsonSchema = LabelSchema.Replace("label", "tag") }))
+            .And.NotBe(AiModelCaller.SchemaKey(Request("anthropic/claude-sonnet-5-5") with { JsonSchema = LabelSchema }));
     }
 
     [Theory]

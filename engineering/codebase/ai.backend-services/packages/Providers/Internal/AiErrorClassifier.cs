@@ -76,6 +76,26 @@ internal static class AiErrorClassifier
     /// <summary>The <c>thinking.type</c> that turns thinking off on a model that always thinks.</summary>
     internal const string BetweenToolsType = "between_tools";
 
+    /// <summary>The phrases of Anthropic's 400 that refuses a response schema as too large or too complex to compile:
+    /// the answer Haiku 5.5 and Sonnet 5.5 gave on 2026-11-19 ("The compiled grammar is too large, which would cause
+    /// performance issues. …"), and the one the structured-outputs docs name for the internal grammar limits.</summary>
+    internal static readonly string[] SchemaRefusals = ["compiled grammar is too large", "Schema is too complex for compilation"];
+
+    /// <summary>Tells whether the provider refused the response schema as too large or too complex: Anthropic's 400 with
+    /// one of <see cref="SchemaRefusals"/>. Any other 400, and every other kind's error, is a different failure; no
+    /// OpenAI-compatible wording is matched, as neither the SDK nor the docs name one.</summary>
+    /// <param name="exception">The failure the SDK threw, or one that wraps it.</param>
+    internal static bool IsSchemaRefused(Exception exception)
+    {
+        for (var current = exception; current is not null; current = current.InnerException)
+        {
+            if (current is AnthropicApiException { StatusCode: HttpStatusCode.BadRequest } api
+                && SchemaRefusals.Any(phrase => api.ResponseBody.Contains(phrase, StringComparison.OrdinalIgnoreCase)))
+                return true;
+        }
+        return false;
+    }
+
     /// <summary>Removes the key, folds whitespace and trims the message to <see cref="MaxErrorLength"/> characters.</summary>
     /// <param name="message">The raw message.</param>
     /// <param name="apiKey">The provider's key, never echoed.</param>

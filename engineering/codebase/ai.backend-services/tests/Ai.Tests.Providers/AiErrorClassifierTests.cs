@@ -81,4 +81,27 @@ public sealed class AiErrorClassifierTests
     [Fact]
     public void Sanitize_ShouldKeepAShortMessageWhole() =>
         AiErrorClassifier.Sanitize(" short ", null).Should().Be("short");
+
+    private static AnthropicApiException Anthropic(HttpStatusCode status, string message) => new("x")
+    {
+        StatusCode = status,
+        ResponseBody = $$$"""{"type":"error","error":{"type":"invalid_request_error","message":"{{{message}}}"}}""",
+    };
+
+    public static TheoryData<Exception, bool> SchemaRefusals() => new()
+    {
+        { Anthropic(HttpStatusCode.BadRequest, "The compiled grammar is too large, which would cause performance issues. Simplify your tool schemas or reduce the number of strict tools."), true },
+        { Anthropic(HttpStatusCode.BadRequest, "Schema is too complex for compilation."), true },
+        { new InvalidOperationException("wrapped", Anthropic(HttpStatusCode.BadRequest, "The compiled grammar is too large")), true },
+        { Anthropic(HttpStatusCode.BadRequest, "max_tokens: too large"), false },
+        { Anthropic(HttpStatusCode.BadRequest, "output_config.format.schema: 'minimum' is not supported"), false },
+        { Anthropic(HttpStatusCode.InternalServerError, "The compiled grammar is too large"), false },
+        { new ClientResultException("The compiled grammar is too large"), false },
+        { new HttpRequestException("The compiled grammar is too large", null, HttpStatusCode.BadRequest), false },
+    };
+
+    [Theory]
+    [MemberData(nameof(SchemaRefusals))]
+    public void IsSchemaRefused_ShouldHoldOnlyForAnthropicsGrammarLimit400(Exception exception, bool refused) =>
+        AiErrorClassifier.IsSchemaRefused(exception).Should().Be(refused);
 }

@@ -33,4 +33,10 @@ public static class AiProviderKinds
     /// no images answers its provider's own 400, classified the same way.</summary>
     /// <param name="kind">The resolved kind.</param>
     public static bool TakesImages(string kind) => kind is Anthropic or OpenAi or Ollama;
+
+    /// <summary>Gets whether a kind has a JSON mode without a schema: OpenAI-compatible hosts
+    /// (<c>response_format: {"type":"json_object"}</c>) and Ollama (<c>format: "json"</c>). Anthropic has none; its
+    /// client sends no format for a schema-less JSON response format.</summary>
+    /// <param name="kind">The resolved kind.</param>
+    public static bool TakesJsonMode(string kind) => kind is OpenAi or Ollama;
 }

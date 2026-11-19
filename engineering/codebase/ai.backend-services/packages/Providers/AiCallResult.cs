@@ -41,6 +41,10 @@ public sealed record AiCallResult
     /// <summary>Gets the reasoning tokens inside <see cref="OutputTokens"/>.</summary>
     public long ReasoningTokens { get; init; }
 
+    /// <summary>Gets whether the answer's schema went in the system instructions instead of the provider's response
+    /// format, because the provider refused it as too large or too complex; the answer is then checked like any other.</summary>
+    public bool SchemaInInstructions { get; init; }
+
     /// <summary>Gets whether the attempt answered with text.</summary>
     public bool Succeeded => ErrorKind is null && Text is not null;
 }

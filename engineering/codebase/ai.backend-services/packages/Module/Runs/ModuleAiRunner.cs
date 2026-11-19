@@ -262,6 +262,9 @@ internal sealed class ModuleAiRunner(AiDbContext db, IAiModelCaller caller, AiIm
         activity?.SetTag("gen_ai.usage.input_tokens", result.InputTokens);
         activity?.SetTag("gen_ai.usage.output_tokens", result.OutputTokens);
         activity?.SetTag("ai.outcome", AiLabels.Outcome(outcome));
+        // The inference log has no column for it: a schema the provider refused goes in the instructions instead.
+        if (plan.Schema is not null)
+            activity?.SetTag("ai.request.schema_mode", result.SchemaInInstructions ? "instructions" : "response_format");
         if (kind is { } errorKind)
         {
             activity?.SetTag("error.type", AiLabels.Write(errorKind));
@@ -339,7 +342,9 @@ internal sealed class ModuleAiRunner(AiDbContext db, IAiModelCaller caller, AiIm
     }
 
     /// <summary>Classifies an attempt: a filtered or refused answer is refused; a provider error fails; an answer that
-    /// misses the schema is schema-invalid; anything else succeeded, with the answer (fence stripped under a schema).</summary>
+    /// misses the schema is schema-invalid; anything else succeeded, with the answer (under a schema, its JSON object with a
+    /// fence or surrounding prose stripped). A structured answer and one whose schema went in the instructions take the
+    /// same check.</summary>
     /// <param name="result">The attempt's result.</param>
     /// <param name="schema">The use case's output schema.</param>
     internal static (AiOutcome Outcome, AiErrorKind? Kind, string? Error, string? Answer) Classify(AiCallResult result, string? schema)

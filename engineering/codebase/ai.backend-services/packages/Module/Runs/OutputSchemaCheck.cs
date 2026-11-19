@@ -1,12 +1,13 @@
 using System.Globalization;
+using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 
 namespace WoW.Two.Sdk.Beta.Be.Ai.Module.Runs;
 
 /// <summary>Checks a model's answer against a use case's output schema, at the top level only: the answer is a JSON object
-/// (a surrounding <c>```json</c> fence stripped), every <c>required</c> property is present, and each described property
-/// keeps its <c>enum</c> values and primitive <c>type</c>s.</summary>
+/// (a surrounding <c>```json</c> fence stripped, or the object found in prose around it), every <c>required</c> property is
+/// present, and each described property keeps its <c>enum</c> values and primitive <c>type</c>s.</summary>
 /// <remarks>No third-party validator: nested objects, formats, patterns and ranges are left to the scorer and the
 /// provider's own structured output.</remarks>
 internal static partial class OutputSchemaCheck
@@ -21,15 +22,73 @@ internal static partial class OutputSchemaCheck
         return fenced.Success ? fenced.Groups["body"].Value.Trim() : trimmed;
     }
 
+    /// <summary>Finds an answer's JSON: the answer with one surrounding fence stripped when that parses as JSON; else, for an
+    /// answer that wraps an object in prose (a model given the schema in its instructions rather than as structured
+    /// output), the first fenced block that holds a JSON object, else the first complete JSON object in the text; else
+    /// the stripped answer, which then fails to parse.</summary>
+    /// <param name="answer">The answer text.</param>
+    public static string ExtractJson(string answer)
+    {
+        var stripped = StripFence(answer);
+        if (Parses(stripped))
+            return stripped;
+
+        foreach (Match fence in InnerFencePattern().Matches(stripped))
+        {
+            var body = fence.Groups["body"].Value.Trim();
+            if (body.StartsWith('{') && Parses(body))
+                return body;
+        }
+
+        var bytes = Encoding.UTF8.GetBytes(stripped);
+        for (var start = Array.IndexOf(bytes, (byte)'{'); start >= 0; start = Array.IndexOf(bytes, (byte)'{', start + 1))
+        {
+            if (ReadObject(bytes.AsSpan(start)) is { } length)
+                return Encoding.UTF8.GetString(bytes, start, length);
+        }
+
+        return stripped;
+    }
+
+    /// <summary>Reads one complete JSON object from the start of <paramref name="utf8"/>.</summary>
+    /// <returns>The object's length in bytes, or none when no complete object starts there.</returns>
+    private static int? ReadObject(ReadOnlySpan<byte> utf8)
+    {
+        var reader = new Utf8JsonReader(utf8);
+        try
+        {
+            if (!reader.Read() || reader.TokenType != JsonTokenType.StartObject || !reader.TrySkip())
+                return null;
+            return (int)reader.BytesConsumed;
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
+
+    private static bool Parses(string text)
+    {
+        try
+        {
+            JsonDocument.Parse(text).Dispose();
+            return true;
+        }
+        catch (JsonException)
+        {
+            return false;
+        }
+    }
+
     /// <summary>Checks an answer against a schema.</summary>
     /// <param name="answer">The answer text.</param>
     /// <param name="schema">The schema, a JSON object.</param>
-    /// <param name="json">The answer's JSON text, fence stripped, when it passes.</param>
+    /// <param name="json">The answer's JSON text, fence or surrounding prose stripped (<see cref="ExtractJson"/>), when it passes.</param>
     /// <param name="error">Why it fails, when it does.</param>
     /// <returns>Whether the answer passes.</returns>
     public static bool TryCheck(string answer, string schema, out string json, out string? error)
     {
-        json = StripFence(answer);
+        json = ExtractJson(answer);
         error = null;
 
         JsonDocument document;
@@ -137,4 +196,8 @@ internal static partial class OutputSchemaCheck
 
     [GeneratedRegex(@"^```[A-Za-z0-9_-]*[ \t]*\r?\n?(?<body>[\s\S]*?)\r?\n?```$", RegexOptions.CultureInvariant)]
     private static partial Regex FencePattern();
+
+    /// <summary>Matches a fenced block anywhere in the text, its opening fence on a line of its own.</summary>
+    [GeneratedRegex(@"```[A-Za-z0-9_-]*[ \t]*\r?\n(?<body>[\s\S]*?)```", RegexOptions.CultureInvariant)]
+    private static partial Regex InnerFencePattern();
 }

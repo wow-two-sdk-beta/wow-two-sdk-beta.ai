@@ -20,6 +20,16 @@ public sealed class ClassifyTests
     }
 
     [Fact]
+    public void Classify_ShouldCheckAnAnswerWhoseSchemaWentInTheInstructions_LikeAStructuredOne()
+    {
+        var fallback = Result("Here is the JSON:\n```json\n{\"relevance\":\"close\"}\n```") with { SchemaInInstructions = true };
+
+        ModuleAiRunner.Classify(fallback, Schema).Should().Be((AiOutcome.Succeeded, (AiErrorKind?)null, (string?)null, "{\"relevance\":\"close\"}"));
+        ModuleAiRunner.Classify(Result("Here: {\"kind\":\"x\"}") with { SchemaInInstructions = true }, Schema).Outcome
+            .Should().Be(AiOutcome.SchemaInvalid);
+    }
+
+    [Fact]
     public void Classify_ShouldKeepFreeText_WithNoSchema()
     {
         ModuleAiRunner.Classify(Result("  a summary  "), null).Answer.Should().Be("  a summary  ");

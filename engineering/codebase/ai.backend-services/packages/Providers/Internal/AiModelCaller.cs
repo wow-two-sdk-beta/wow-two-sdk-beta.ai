@@ -1,4 +1,6 @@
 using System.Collections.Concurrent;
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 using Anthropic.Models.Messages;
 using Microsoft.Extensions.AI;
@@ -14,6 +16,13 @@ internal sealed class AiModelCaller(IOptions<AiProvidersOptions> options, IAiCha
     // Anthropic model ids that refused `thinking: disabled` and took `between_tools`; kept for the caller's life.
     private readonly ConcurrentDictionary<string, byte> betweenToolsModels = new(StringComparer.Ordinal);
 
+    // `{provider}/{model}|{schema hash}` pairs whose schema the provider refused as too large or complex; their calls
+    // send the schema in the instructions first. Kept for the caller's life.
+    private readonly ConcurrentDictionary<string, byte> refusedSchemas = new(StringComparer.Ordinal);
+
+    /// <summary>The line that leads the schema in the instructions when the provider refused it as a response format.</summary>
+    internal const string SchemaInstructionsLead = "Answer with one JSON object that matches this JSON schema:";
+
     /// <inheritdoc />
     public bool IsConfigured(string provider) => AiProviderResolution.Describe(options.Value, provider).Problem is null;
 
@@ -23,6 +32,7 @@ internal sealed class AiModelCaller(IOptions<AiProvidersOptions> options, IAiCha
         ArgumentNullException.ThrowIfNull(request);
         var startedAt = time.GetUtcNow();
         var started = time.GetTimestamp();
+        var inInstructions = false;
 
         var (kind, settings, problem) = AiProviderResolution.Describe(options.Value, request.Model.Provider);
         if (problem is not null)
@@ -50,6 +60,12 @@ internal sealed class AiModelCaller(IOptions<AiProvidersOptions> options, IAiCha
         if (betweenTools)
             UseBetweenTools(chatOptions, request);
 
+        // A schema this provider and model refused before goes in the instructions without a first attempt.
+        var schemaKey = chatOptions.ResponseFormat is ChatResponseFormatJson { Schema: not null } ? SchemaKey(request) : null;
+        inInstructions = schemaKey is not null && refusedSchemas.ContainsKey(schemaKey);
+        if (inInstructions)
+            UseSchemaInInstructions(messages, chatOptions, request, kind!);
+
         ChatResponse response;
         while (true)
         {
@@ -72,6 +88,14 @@ internal sealed class AiModelCaller(IOptions<AiProvidersOptions> options, IAiCha
                 // A model that always thinks refuses `disabled` and names `between_tools`: the same attempt goes again, once.
                 betweenTools = true;
                 UseBetweenTools(chatOptions, request);
+            }
+            catch (Exception exception) when (schemaKey is not null && !inInstructions && AiErrorClassifier.IsSchemaRefused(exception))
+            {
+                // The provider will not compile the schema: the same attempt goes again once with the schema in the
+                // instructions. The refusal is about the schema alone, so it is remembered whatever the retry answers.
+                inInstructions = true;
+                refusedSchemas.TryAdd(schemaKey, 0);
+                UseSchemaInInstructions(messages, chatOptions, request, kind!);
             }
             catch (Exception exception)
             {
@@ -109,6 +133,7 @@ internal sealed class AiModelCaller(IOptions<AiProvidersOptions> options, IAiCha
             Model = request.Model,
             StartedAtUtc = startedAt,
             LatencyMs = (long)time.GetElapsedTime(started).TotalMilliseconds,
+            SchemaInInstructions = inInstructions,
         };
 
         AiCallResult Failed(AiErrorKind errorKind, string error) => Result() with { ErrorKind = errorKind, Error = error };
@@ -129,6 +154,36 @@ internal sealed class AiModelCaller(IOptions<AiProvidersOptions> options, IAiCha
             Model = request.Model.Model,
             Thinking = new ThinkingConfigBetweenTools(),
         };
+
+    /// <summary>Sends the schema in the system instructions instead of the response format, for a provider that refused it
+    /// as too large or too complex: the response format becomes the kind's JSON mode where it has one
+    /// (<see cref="AiProviderKinds.TakesJsonMode"/>), else none, and the system message ends with
+    /// <see cref="SchemaInstructionsLead"/> and the schema as given, still cache-marked on Anthropic. The caller's
+    /// schema check reads the answer as it reads a structured one, a fence or prose around the object stripped.</summary>
+    /// <param name="messages">The attempt's messages; the system message is replaced, or added first when there is none.</param>
+    /// <param name="chatOptions">The attempt's options.</param>
+    /// <param name="request">The attempt.</param>
+    /// <param name="kind">The provider's kind.</param>
+    internal static void UseSchemaInInstructions(List<ChatMessage> messages, ChatOptions chatOptions, AiCallRequest request, string kind)
+    {
+        chatOptions.ResponseFormat = AiProviderKinds.TakesJsonMode(kind) ? ChatResponseFormat.Json : null;
+
+        var schema = $"{SchemaInstructionsLead}\n\n{request.JsonSchema!.Trim()}";
+        var system = new TextContent(string.IsNullOrWhiteSpace(request.System) ? schema : $"{request.System.TrimEnd()}\n\n{schema}");
+        if (request.CacheSystem && kind == AiProviderKinds.Anthropic)
+            system.WithCacheControl(new CacheControlEphemeral());
+
+        var message = new ChatMessage(ChatRole.System, [system]);
+        if (messages.Count > 0 && messages[0].Role == ChatRole.System)
+            messages[0] = message;
+        else
+            messages.Insert(0, message);
+    }
+
+    /// <summary>Gets the key a refused schema is remembered by: the model reference and the schema text's SHA-256.</summary>
+    /// <param name="request">The attempt; its schema is set.</param>
+    internal static string SchemaKey(AiCallRequest request) =>
+        $"{request.Model}|{Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(request.JsonSchema!)))}";
 
     /// <summary>Builds the messages and options of one attempt.</summary>
     /// <param name="request">The attempt.</param>
