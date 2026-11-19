@@ -85,8 +85,10 @@ internal static partial class OutputSchemaCheck
     /// <param name="schema">The schema, a JSON object.</param>
     /// <param name="json">The answer's JSON text, fence or surrounding prose stripped (<see cref="ExtractJson"/>), when it passes.</param>
     /// <param name="error">Why it fails, when it does.</param>
+    /// <param name="checkEnums">Whether each property's value must be one of its <c>enum</c> values; false leaves an
+    /// out-of-list value to a caller that repairs it.</param>
     /// <returns>Whether the answer passes.</returns>
-    public static bool TryCheck(string answer, string schema, out string json, out string? error)
+    public static bool TryCheck(string answer, string schema, out string json, out string? error, bool checkEnums = true)
     {
         json = ExtractJson(answer);
         error = null;
@@ -132,7 +134,7 @@ internal static partial class OutputSchemaCheck
                 {
                     if (!root.TryGetProperty(property.Name, out var value) || property.Value.ValueKind != JsonValueKind.Object)
                         continue;
-                    if (CheckProperty(property.Name, value, property.Value) is { } problem)
+                    if (CheckProperty(property.Name, value, property.Value, checkEnums) is { } problem)
                     {
                         error = problem;
                         return false;
@@ -144,8 +146,9 @@ internal static partial class OutputSchemaCheck
         return true;
     }
 
-    /// <summary>Checks one property's value against its schema's <c>type</c> and <c>enum</c>.</summary>
-    private static string? CheckProperty(string name, JsonElement value, JsonElement rules)
+    /// <summary>Checks one property's value against its schema's <c>type</c> and, when <paramref name="checkEnums"/>, its
+    /// <c>enum</c>.</summary>
+    private static string? CheckProperty(string name, JsonElement value, JsonElement rules, bool checkEnums)
     {
         if (rules.TryGetProperty("type", out var type))
         {
@@ -159,7 +162,7 @@ internal static partial class OutputSchemaCheck
                 return $"The answer's '{name}' is a JSON {Kind(value.ValueKind)}, not {string.Join(" or ", types)}.";
         }
 
-        if (rules.TryGetProperty("enum", out var allowed) && allowed.ValueKind == JsonValueKind.Array
+        if (checkEnums && rules.TryGetProperty("enum", out var allowed) && allowed.ValueKind == JsonValueKind.Array
             && !allowed.EnumerateArray().Any(option => SameValue(option, value)))
             return $"The answer's '{name}' is {value.GetRawText()}, not one of {allowed.GetRawText()}.";
 

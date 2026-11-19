@@ -13,6 +13,8 @@ export interface AiRunRequest {
   /** `{provider}/{model}` references to try instead of the use case's route. */
   readonly models?: readonly string[] | null;
   readonly fresh?: boolean;
+  /** Whether top-level answer values must be in their schema's `enum` lists; absent means true. */
+  readonly checkEnums?: boolean;
   /** The data scope, such as `tenant:{id}`; absent for the caller's default. */
   readonly scope?: string | null;
 }

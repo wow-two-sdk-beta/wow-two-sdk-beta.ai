@@ -30,6 +30,17 @@ public sealed class ClassifyTests
     }
 
     [Fact]
+    public void Classify_ShouldSucceed_AnOutOfListValue_WhenTheCallerSkipsTheEnumCheck()
+    {
+        const string schema = """{"type":"object","required":["relevance"],"properties":{"relevance":{"type":"string","enum":["close","far"]}}}""";
+        var answer = Result("""{"relevance":"maybe"}""");
+
+        ModuleAiRunner.Classify(answer, schema).Outcome.Should().Be(AiOutcome.SchemaInvalid);
+        ModuleAiRunner.Classify(answer, schema, checkEnums: false)
+            .Should().Be((AiOutcome.Succeeded, (AiErrorKind?)null, (string?)null, """{"relevance":"maybe"}"""));
+    }
+
+    [Fact]
     public void Classify_ShouldKeepFreeText_WithNoSchema()
     {
         ModuleAiRunner.Classify(Result("  a summary  "), null).Answer.Should().Be("  a summary  ");

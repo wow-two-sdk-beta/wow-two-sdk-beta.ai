@@ -38,6 +38,20 @@ public sealed class OutputSchemaCheckTests
         error.Should().Contain(reason);
     }
 
+    [Fact]
+    public void TryCheck_ShouldLeaveAnOutOfListValue_ToACallerThatRepairsIt()
+    {
+        const string answer = """{"relevance":"maybe","kind":"x"}""";
+
+        OutputSchemaCheck.TryCheck(answer, Schema, out var json, out var error, checkEnums: false).Should().BeTrue(error);
+        json.Should().Be(answer);
+        OutputSchemaCheck.TryCheck("""{"relevance":"maybe","kind":3}""", Schema, out _, out error, checkEnums: false)
+            .Should().BeFalse("a wrong type still fails");
+        error.Should().Contain("'kind'");
+        OutputSchemaCheck.TryCheck("""{"relevance":"maybe"}""", Schema, out _, out _, checkEnums: false)
+            .Should().BeFalse("a missing required property still fails");
+    }
+
     [Theory]
     [InlineData("Here is the answer:\n```json\n{\"relevance\":\"far\",\"kind\":null}\n```\nHope it helps.")]
     [InlineData("```json\n{\"relevance\":\"far\",\"kind\":null}\n```\nThe post is about a concert.")]

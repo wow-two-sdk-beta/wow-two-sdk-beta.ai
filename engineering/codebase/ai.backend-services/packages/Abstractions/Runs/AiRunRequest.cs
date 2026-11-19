@@ -32,6 +32,11 @@ public sealed record AiRunRequest
     /// <summary>Gets the eval run the call belongs to, when an eval runs it.</summary>
     public Guid? EvalRunId { get; init; }
 
+    /// <summary>Gets whether a top-level answer value must be one of its schema's <c>enum</c> values; true by default. A
+    /// caller that repairs an out-of-list value itself (maps it to its own fallback and flags it) sets false, so such an
+    /// answer succeeds instead of failing schema-invalid; the JSON shape, required properties and types are still checked.</summary>
+    public bool CheckEnums { get; init; } = true;
+
     /// <summary>Gets the data scope the call belongs to, such as <c>tenant:{id}</c>; none for the unscoped bucket. Recorded
     /// on every attempt; a stored answer is reused only within the same scope. Use cases and prompts stay shared.</summary>
     public string? Scope { get; init; }

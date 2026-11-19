@@ -254,7 +254,7 @@ internal sealed class ModuleAiRunner(AiDbContext db, IAiModelCaller caller, AiIm
             activity?.SetTag("ai.request.images", plan.Images.Count);
 
         var result = await CallAsync(useCase, plan, cancellationToken);
-        var (outcome, kind, error, answer) = Classify(result, plan.Schema);
+        var (outcome, kind, error, answer) = Classify(result, plan.Schema, request.CheckEnums);
         var at = StoredClock.Truncate(result.StartedAtUtc);
         var price = PriceMath.InEffect(prices.Where(row => row.Provider == plan.Model.Provider && row.Model == plan.Model.Model), at);
         var cost = price is null ? 0 : PriceMath.Cost(price, result.InputTokens, result.OutputTokens, result.CacheReadTokens, result.CacheWriteTokens);
@@ -347,7 +347,8 @@ internal sealed class ModuleAiRunner(AiDbContext db, IAiModelCaller caller, AiIm
     /// same check.</summary>
     /// <param name="result">The attempt's result.</param>
     /// <param name="schema">The use case's output schema.</param>
-    internal static (AiOutcome Outcome, AiErrorKind? Kind, string? Error, string? Answer) Classify(AiCallResult result, string? schema)
+    /// <param name="checkEnums">Whether top-level values must be in their <c>enum</c> lists (<see cref="AiRunRequest.CheckEnums"/>).</param>
+    internal static (AiOutcome Outcome, AiErrorKind? Kind, string? Error, string? Answer) Classify(AiCallResult result, string? schema, bool checkEnums = true)
     {
         if (result.ErrorKind == AiErrorKind.ContentFiltered)
             return (AiOutcome.Refused, AiErrorKind.ContentFiltered, result.Error, null);
@@ -362,7 +363,7 @@ internal sealed class ModuleAiRunner(AiDbContext db, IAiModelCaller caller, AiIm
         if (schema is null)
             return (AiOutcome.Succeeded, null, null, result.Text);
 
-        return OutputSchemaCheck.TryCheck(result.Text, schema, out var json, out var error)
+        return OutputSchemaCheck.TryCheck(result.Text, schema, out var json, out var error, checkEnums)
             ? (AiOutcome.Succeeded, null, null, json)
             : (AiOutcome.SchemaInvalid, AiErrorKind.SchemaMismatch, error, null);
     }
