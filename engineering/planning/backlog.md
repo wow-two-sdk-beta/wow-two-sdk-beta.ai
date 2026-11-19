@@ -20,7 +20,7 @@ ChatGPT builds these in the pull order of wow-two-ws `system/sessions/events-int
 
 | Item | Type | Notes |
 |---|---|---|
-| A02 First eval on `afisha-10` from the bench | product | spec in `tasks-platform.md` · owner: ev-ai lane |
+| A02 Confirm the `afisha-10` labels | product | first eval ran 2026-11-18 (v0.3); only the owner's label confirmation is left · spec in `tasks-platform.md` · owner: ev-ai lane |
 | A04 Publish the AI packages and image | engineering | spec in `tasks-platform.md` · owner: ev-ai lane |
 | A06 Budget caps and the weekly shadow comparison | feature | spec in `tasks-platform.md` · owner: ev-ai lane |
 
